@@ -1,0 +1,252 @@
+{
+ "1": {
+  "class_type": "CheckpointLoaderSimple",
+  "inputs": {
+   "ckpt_name": "catTowerNoobaiXL_v10Vpred.safetensors"
+  }
+ },
+ "2": {
+  "class_type": "ModelSamplingDiscrete",
+  "inputs": {
+   "model": [
+    "1",
+    0
+   ],
+   "sampling": "v_prediction",
+   "zsnr": true
+  }
+ },
+ "3": {
+  "class_type": "RescaleCFG",
+  "inputs": {
+   "model": [
+    "2",
+    0
+   ],
+   "multiplier": 1
+  }
+ },
+ "4": {
+  "class_type": "CLIPTextEncode",
+  "inputs": {
+   "clip": [
+    "1",
+    1
+   ],
+   "text": "closed mouth"
+  },
+  "_meta": {
+   "title": "ポジティブ"
+  }
+ },
+ "5": {
+  "class_type": "CLIPTextEncode",
+  "inputs": {
+   "clip": [
+    "1",
+    1
+   ],
+   "text": "open mouth, teeth, tongue"
+  },
+  "_meta": {
+   "title": "ネガティブ"
+  }
+ },
+ "6": {
+  "class_type": "RFInpaintCanvasNode",
+  "inputs": {
+   "image": "example.png",
+   "mask_data": ""
+  },
+  "_meta": {
+   "title": "元画像 & インラインマスク描画"
+  }
+ },
+ "7": {
+  "class_type": "GrowMask",
+  "inputs": {
+   "mask": [
+    "6",
+    1
+   ],
+   "expand": 8,
+   "tapered_corners": true
+  }
+ },
+ "8": {
+  "class_type": "MaskToImage",
+  "inputs": {
+   "mask": [
+    "7",
+    0
+   ]
+  }
+ },
+ "9": {
+  "class_type": "ImageBlur",
+  "inputs": {
+   "image": [
+    "8",
+    0
+   ],
+   "blur_radius": 6,
+   "sigma": 3.0
+  }
+ },
+ "10": {
+  "class_type": "ImageToMask",
+  "inputs": {
+   "image": [
+    "9",
+    0
+   ],
+   "channel": "red"
+  }
+ },
+ "11": {
+  "class_type": "VAEEncode",
+  "inputs": {
+   "pixels": [
+    "6",
+    0
+   ],
+   "vae": [
+    "1",
+    2
+   ]
+  }
+ },
+ "12": {
+  "class_type": "SetLatentNoiseMask",
+  "inputs": {
+   "samples": [
+    "19",
+    0
+   ],
+   "mask": [
+    "7",
+    0
+   ]
+  }
+ },
+ "13": {
+  "class_type": "KSampler",
+  "inputs": {
+   "model": [
+    "3",
+    0
+   ],
+   "seed": 1,
+   "steps": 25,
+   "cfg": 7,
+   "sampler_name": "euler",
+   "scheduler": "beta",
+   "positive": [
+    "4",
+    0
+   ],
+   "negative": [
+    "5",
+    0
+   ],
+   "latent_image": [
+    "12",
+    0
+   ],
+   "denoise": 1.0
+  }
+ },
+ "14": {
+  "class_type": "VAEDecode",
+  "inputs": {
+   "samples": [
+    "13",
+    0
+   ],
+   "vae": [
+    "1",
+    2
+   ]
+  }
+ },
+ "15": {
+  "class_type": "ImageCompositeMasked",
+  "inputs": {
+   "destination": [
+    "20",
+    0
+   ],
+   "source": [
+    "14",
+    0
+   ],
+   "x": 0,
+   "y": 0,
+   "resize_source": false,
+   "mask": [
+    "10",
+    0
+   ]
+  }
+ },
+ "16": {
+  "class_type": "SaveImage",
+  "inputs": {
+   "images": [
+    "15",
+    0
+   ],
+   "filename_prefix": "blak/inpaint"
+  }
+ },
+ "17": {
+  "class_type": "PreviewImage",
+  "inputs": {
+   "images": [
+    "9",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "確認:マスク(白=書き換え)"
+  }
+ },
+ "18": {
+  "class_type": "PreviewImage",
+  "inputs": {
+   "images": [
+    "14",
+    0
+   ]
+  },
+  "_meta": {
+   "title": "確認:貼り戻し前の生成結果"
+  }
+ },
+ "19": {
+  "class_type": "RepeatLatentBatch",
+  "inputs": {
+   "samples": [
+    "11",
+    0
+   ],
+   "amount": 4
+  },
+  "_meta": {
+   "title": "バッチ枚数(latent)"
+  }
+ },
+ "20": {
+  "class_type": "RepeatImageBatch",
+  "inputs": {
+   "image": [
+    "6",
+    0
+   ],
+   "amount": 4
+  },
+  "_meta": {
+   "title": "バッチ枚数(貼り戻し先・latentと同じ数)"
+  }
+ }
+}
