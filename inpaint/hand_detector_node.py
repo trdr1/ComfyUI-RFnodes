@@ -1,4 +1,6 @@
 import os
+import sys
+import subprocess
 import urllib.request
 import shutil
 import torch
@@ -37,7 +39,12 @@ def _get_yolo_model():
     try:
         from ultralytics import YOLO
     except ImportError:
-        raise ImportError("ultralytics is required for hand detection. Please run: pip install ultralytics")
+        print("[RFHandDetector] ultralytics package not detected. Installing automatically...")
+        try:
+            subprocess.run([sys.executable, "-m", "pip", "install", "ultralytics"], check=True)
+            from ultralytics import YOLO
+        except Exception as e:
+            raise RuntimeError(f"Automatic installation of ultralytics failed: {e}")
     model_path = _get_model_path()
     _LOADED_MODEL = YOLO(model_path)
     return _LOADED_MODEL

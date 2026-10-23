@@ -1,6 +1,6 @@
 from .nodes import RFEntitySearchNode, RFSeriesCharacterListNode
 from .wildcard import RFWildcardProcessorNode
-from .inpaint import RFInpaintCanvasNode, RFHandDetectorNode
+from .inpaint import RFInpaintCanvasNode, RFHandDetectorNode, RFSaveImagePreserveMeta
 from .db_manager import ensure_db
 from .server_api import setup_routes
 
@@ -15,6 +15,7 @@ NODE_CLASS_MAPPINGS = {
     "RFWildcardProcessorNode": RFWildcardProcessorNode,
     "RFInpaintCanvasNode": RFInpaintCanvasNode,
     "RFHandDetectorNode": RFHandDetectorNode,
+    "RFSaveImagePreserveMeta": RFSaveImagePreserveMeta,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
@@ -23,6 +24,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "RFWildcardProcessorNode": "RF Wildcard Processor",
     "RFInpaintCanvasNode": "RF Inpaint Canvas (Inline Paint)",
     "RFHandDetectorNode": "RF Auto Hand Detector to Mask",
+    "RFSaveImagePreserveMeta": "RF Save Image (Preserve Metadata)",
 }
 
 __all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "WEB_DIRECTORY"]

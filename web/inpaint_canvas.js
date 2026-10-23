@@ -16,12 +16,15 @@ app.registerExtension({
 
             if (maskWidget) {
                 maskWidget.type = "hidden";
-                maskWidget.computeSize = () => [0, -4];
+                maskWidget.draw = () => {};
+                maskWidget.computeSize = () => [0, 0];
             }
 
             const container = document.createElement("div");
             Object.assign(container.style, {
                 width: "100%",
+                height: "100%",
+                minHeight: "200px",
                 display: "flex",
                 flexDirection: "column",
                 gap: "4px",
@@ -35,6 +38,7 @@ app.registerExtension({
                 alignItems: "center",
                 gap: "6px",
                 width: "100%",
+                flex: "none",
                 fontSize: "11px",
                 color: "#ccc"
             });
@@ -44,6 +48,19 @@ app.registerExtension({
             Object.assign(modeBtn.style, {
                 flex: "1",
                 height: "22px",
+                background: "#2a2a38",
+                border: "1px solid #4a4a5e",
+                color: "#eee",
+                borderRadius: "3px",
+                cursor: "pointer",
+                fontSize: "11px"
+            });
+
+            const undoBtn = document.createElement("button");
+            undoBtn.textContent = "Undo";
+            Object.assign(undoBtn.style, {
+                height: "22px",
+                padding: "0 8px",
                 background: "#2a2a38",
                 border: "1px solid #4a4a5e",
                 color: "#eee",
@@ -68,8 +85,8 @@ app.registerExtension({
             const sizeSlider = document.createElement("input");
             sizeSlider.type = "range";
             sizeSlider.min = "4";
-            sizeSlider.max = "100";
-            sizeSlider.value = "28";
+            sizeSlider.max = "120";
+            sizeSlider.value = "32";
             Object.assign(sizeSlider.style, {
                 width: "70px",
                 cursor: "pointer"
@@ -77,82 +94,97 @@ app.registerExtension({
 
             toolbar.appendChild(modeBtn);
             toolbar.appendChild(sizeSlider);
+            toolbar.appendChild(undoBtn);
             toolbar.appendChild(clearBtn);
 
-            this.imgs = null;
-            const origDrawBg = this.onDrawBackground;
-            this.onDrawBackground = function (ctx) {
-                this.imgs = null;
-                if (origDrawBg) origDrawBg.apply(this, arguments);
-            };
+            // キャンバスを収める領域（ノードの余り領域いっぱいに広がる）
+            const stage = document.createElement("div");
+            Object.assign(stage.style, {
+                flex: "1 1 0",
+                minHeight: "0",
+                minWidth: "0",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                overflow: "hidden"
+            });
 
-            const canvasWrap = document.createElement("div");
-            Object.assign(canvasWrap.style, {
-                position: "relative",
-                width: "100%",
-                height: "460px",
+            const canvas = document.createElement("canvas");
+            Object.assign(canvas.style, {
+                display: "block",
+                flex: "none",
                 backgroundColor: "#111116",
                 borderRadius: "4px",
-                overflow: "hidden",
-                border: "1px solid #333342"
+                outline: "1px solid #333342",
+                cursor: "crosshair"
             });
 
-            const undoBtn = document.createElement("button");
-            undoBtn.textContent = "Undo";
-            Object.assign(undoBtn.style, {
-                height: "22px",
-                padding: "0 8px",
-                background: "#2a2a38",
-                border: "1px solid #4a4a5e",
-                color: "#eee",
-                borderRadius: "3px",
-                cursor: "pointer",
-                fontSize: "11px"
-            });
-
-            toolbar.insertBefore(undoBtn, clearBtn);
-
-            const bgCanvas = document.createElement("canvas");
-            const maskCanvas = document.createElement("canvas");
-            const cursorCanvas = document.createElement("canvas");
-
-            [bgCanvas, maskCanvas, cursorCanvas].forEach((c) => {
-                Object.assign(c.style, {
-                    position: "absolute",
-                    left: "0",
-                    top: "0"
-                });
-                canvasWrap.appendChild(c);
-            });
-            cursorCanvas.style.pointerEvents = "none";
-
+            stage.appendChild(canvas);
             container.appendChild(toolbar);
-            container.appendChild(canvasWrap);
+            container.appendChild(stage);
 
+            // 最小高さは固定値。ノードの高さには依存させない（無限伸長の防止）
             const domWidget = this.addDOMWidget("canvas_ui", "customcanvas", container, {
                 getValue: () => (maskWidget ? maskWidget.value : ""),
-                setValue: (v) => {}
+                setValue: (v) => {},
+                getMinHeight: () => 240
             });
 
+            const maskBuffer = document.createElement("canvas");
             let isDrawing = false;
             let currentMode = "brush";
             let currentImg = null;
             let historyStack = [];
             let lastLockedImage = imgWidget ? imgWidget.value : "";
 
+            // stage の領域に、アスペクト比を保ったまま最大サイズで収める
+            const fitCanvas = () => {
+                const sw = stage.clientWidth;
+                const sh = stage.clientHeight;
+                if (!sw || !sh || !canvas.width || !canvas.height) return;
+                const scale = Math.min(sw / canvas.width, sh / canvas.height);
+                canvas.style.width = `${Math.floor(canvas.width * scale)}px`;
+                canvas.style.height = `${Math.floor(canvas.height * scale)}px`;
+            };
+
+            const resizeObserver = new ResizeObserver(() => fitCanvas());
+            resizeObserver.observe(stage);
+
+            const render = () => {
+                const ctx = canvas.getContext("2d");
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                if (currentImg) {
+                    ctx.drawImage(currentImg, 0, 0, canvas.width, canvas.height);
+                }
+                ctx.save();
+                ctx.globalAlpha = 0.65;
+                ctx.drawImage(maskBuffer, 0, 0, canvas.width, canvas.height);
+                ctx.restore();
+            };
+
             const pushHistory = () => {
-                if (maskCanvas.width === 0 || maskCanvas.height === 0) return;
-                const ctx = maskCanvas.getContext("2d");
-                if (historyStack.length >= 30) historyStack.shift();
-                historyStack.push(ctx.getImageData(0, 0, maskCanvas.width, maskCanvas.height));
+                if (maskBuffer.width === 0 || maskBuffer.height === 0) return;
+                const mCtx = maskBuffer.getContext("2d");
+                if (historyStack.length >= 25) historyStack.shift();
+                historyStack.push(mCtx.getImageData(0, 0, maskBuffer.width, maskBuffer.height));
+            };
+
+            const syncMask = () => {
+                if (!maskWidget) return;
+                if (maskBuffer.width === 0 || maskBuffer.height === 0) {
+                    maskWidget.value = "";
+                    return;
+                }
+                maskWidget.value = maskBuffer.toDataURL("image/png");
             };
 
             const undo = () => {
                 if (historyStack.length === 0) return;
-                const ctx = maskCanvas.getContext("2d");
+                const mCtx = maskBuffer.getContext("2d");
                 const prev = historyStack.pop();
-                ctx.putImageData(prev, 0, 0);
-                syncMaskValue();
+                mCtx.putImageData(prev, 0, 0);
+                render();
+                syncMask();
             };
 
             undoBtn.onclick = (e) => {
@@ -160,98 +192,13 @@ app.registerExtension({
                 undo();
             };
 
-            const updateCanvasLayout = () => {
-                if (!currentImg || currentImg.naturalWidth === 0) return;
-                const wrapW = canvasWrap.clientWidth || (node.size[0] - 20);
-                const wrapH = canvasWrap.clientHeight || 460;
-                const imgW = currentImg.naturalWidth;
-                const imgH = currentImg.naturalHeight;
-                const aspect = imgW / imgH;
-
-                let renderW = wrapW;
-                let renderH = wrapW / aspect;
-                if (renderH > wrapH) {
-                    renderH = wrapH;
-                    renderW = wrapH * aspect;
-                }
-
-                const offX = Math.max(0, (wrapW - renderW) / 2);
-                const offY = Math.max(0, (wrapH - renderH) / 2);
-
-                [bgCanvas, maskCanvas, cursorCanvas].forEach((c) => {
-                    c.style.width = `${renderW}px`;
-                    c.style.height = `${renderH}px`;
-                    c.style.left = `${offX}px`;
-                    c.style.top = `${offY}px`;
-                });
-                cursorCanvas.width = maskCanvas.width;
-                cursorCanvas.height = maskCanvas.height;
-            };
-
-            const resizeCanvases = (w, h) => {
-                const maxDim = 1024;
-                let targetW = w;
-                let targetH = h;
-                if (targetW > maxDim || targetH > maxDim) {
-                    if (targetW > targetH) {
-                        targetH = Math.round((targetH * maxDim) / targetW);
-                        targetW = maxDim;
-                    } else {
-                        targetW = Math.round((targetW * maxDim) / targetH);
-                        targetH = maxDim;
-                    }
-                }
-                bgCanvas.width = targetW;
-                bgCanvas.height = targetH;
-                maskCanvas.width = targetW;
-                maskCanvas.height = targetH;
-                cursorCanvas.width = targetW;
-                cursorCanvas.height = targetH;
-            };
-
-            const redrawBg = () => {
-                if (!currentImg) return;
-                resizeCanvases(currentImg.naturalWidth, currentImg.naturalHeight);
-                const bgCtx = bgCanvas.getContext("2d");
-                bgCtx.clearRect(0, 0, bgCanvas.width, bgCanvas.height);
-                bgCtx.drawImage(currentImg, 0, 0, bgCanvas.width, bgCanvas.height);
-                updateCanvasLayout();
-            };
-
-            const loadMaskFromData = (dataStr) => {
-                if (!dataStr || !dataStr.startsWith("data:image")) return;
-                const mImg = new Image();
-                mImg.onload = () => {
-                    const ctx = maskCanvas.getContext("2d");
-                    ctx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
-                    ctx.drawImage(mImg, 0, 0, maskCanvas.width, maskCanvas.height);
-                };
-                mImg.src = dataStr;
-            };
-
-
-
-            const adjustSizeAndLayout = () => {
-                let fixedHeight = 80;
-                for (const w of node.widgets) {
-                    if (w === domWidget) continue;
-                    if (w.computeSize) {
-                        const sz = w.computeSize(node.size[0]);
-                        fixedHeight += (sz && sz[1] > 0) ? sz[1] + 4 : 24;
-                    } else {
-                        fixedHeight += 24;
-                    }
-                }
-                const availH = Math.max(200, node.size[1] - fixedHeight);
-                canvasWrap.style.height = `${availH}px`;
-                domWidget.computeSize = (width) => [width, availH + 40];
-                updateCanvasLayout();
-            };
-
-            const origOnResize = this.onResize;
-            this.onResize = function (size) {
-                if (origOnResize) origOnResize.apply(this, arguments);
-                adjustSizeAndLayout();
+            clearBtn.onclick = (e) => {
+                e.preventDefault();
+                pushHistory();
+                const mCtx = maskBuffer.getContext("2d");
+                mCtx.clearRect(0, 0, maskBuffer.width, maskBuffer.height);
+                render();
+                syncMask();
             };
 
             modeBtn.onclick = () => {
@@ -266,125 +213,174 @@ app.registerExtension({
                 }
             };
 
-            const syncMaskValue = () => {
-                if (!maskWidget) return;
-                if (maskCanvas.width === 0 || maskCanvas.height === 0) {
-                    maskWidget.value = "";
-                    return;
+            const loadMaskFromData = (dataStr) => {
+                if (!dataStr || !dataStr.startsWith("data:image")) return;
+                const mImg = new Image();
+                mImg.onload = () => {
+                    const mCtx = maskBuffer.getContext("2d");
+                    mCtx.clearRect(0, 0, maskBuffer.width, maskBuffer.height);
+                    mCtx.drawImage(mImg, 0, 0, maskBuffer.width, maskBuffer.height);
+                    render();
+                };
+                mImg.src = dataStr;
+            };
+
+            const setupDimensions = (w, h) => {
+                const maxDim = 1024;
+                let targetW = w;
+                let targetH = h;
+                if (targetW > maxDim || targetH > maxDim) {
+                    if (targetW > targetH) {
+                        targetH = Math.round((targetH * maxDim) / targetW);
+                        targetW = maxDim;
+                    } else {
+                        targetW = Math.round((targetW * maxDim) / targetH);
+                        targetH = maxDim;
+                    }
                 }
-                maskWidget.value = maskCanvas.toDataURL("image/png");
-                app.graph.setDirtyCanvas(true, true);
+                canvas.width = targetW;
+                canvas.height = targetH;
+                maskBuffer.width = targetW;
+                maskBuffer.height = targetH;
+                fitCanvas();
             };
 
-            clearBtn.onclick = () => {
-                pushHistory();
-                const ctx = maskCanvas.getContext("2d");
-                ctx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
-                syncMaskValue();
+            const loadImage = (filename) => {
+                if (!filename) return;
+                lastLockedImage = filename;
+                const img = new Image();
+                img.crossOrigin = "anonymous";
+                img.onload = () => {
+                    currentImg = img;
+                    setupDimensions(img.naturalWidth, img.naturalHeight);
+                    render();
+                    if (maskWidget && maskWidget.value) {
+                        loadMaskFromData(maskWidget.value);
+                    }
+                };
+                img.onerror = () => {
+                    throw new Error(`Failed to load inpaint image: ${filename}`);
+                };
+                img.src = api.apiURL(`/view?filename=${encodeURIComponent(filename)}&type=input`);
             };
 
-            const getCanvasPos = (e) => {
-                const rect = maskCanvas.getBoundingClientRect();
-                const scaleX = maskCanvas.width / rect.width;
-                const scaleY = maskCanvas.height / rect.height;
+            if (imgWidget) {
+                const origCb = imgWidget.callback;
+                imgWidget.callback = function (v) {
+                    if (origCb) origCb.apply(this, arguments);
+                    loadImage(v || (imgWidget ? imgWidget.value : ""));
+                };
+            }
+
+            const checkImageUpdate = () => {
+                if (imgWidget && imgWidget.value && imgWidget.value !== lastLockedImage) {
+                    loadImage(imgWidget.value);
+                }
+            };
+
+            const origConfigure = this.onConfigure;
+            this.onConfigure = function () {
+                if (origConfigure) origConfigure.apply(this, arguments);
+                if (imgWidget && imgWidget.value) {
+                    loadImage(imgWidget.value);
+                }
+            };
+
+            const origExecuted = this.onExecuted;
+            this.onExecuted = function () {
+                if (origExecuted) origExecuted.apply(this, arguments);
+                if (imgWidget && lastLockedImage && imgWidget.value !== lastLockedImage) {
+                    imgWidget.value = lastLockedImage;
+                }
+            };
+
+            const getPos = (e) => {
+                const rect = canvas.getBoundingClientRect();
                 return {
-                    x: (e.clientX - rect.left) * scaleX,
-                    y: (e.clientY - rect.top) * scaleY
+                    x: (e.clientX - rect.left) * (canvas.width / rect.width),
+                    y: (e.clientY - rect.top) * (canvas.height / rect.height)
                 };
             };
 
-            const drawCursor = (x, y) => {
-                const cCtx = cursorCanvas.getContext("2d");
-                cCtx.clearRect(0, 0, cursorCanvas.width, cursorCanvas.height);
-                const radius = parseInt(sizeSlider.value, 10) / 2;
-                cCtx.beginPath();
-                cCtx.arc(x, y, radius, 0, Math.PI * 2);
-                cCtx.strokeStyle = "rgba(255, 255, 255, 0.9)";
-                cCtx.lineWidth = 1.5;
-                cCtx.stroke();
-                cCtx.beginPath();
-                cCtx.arc(x, y, Math.max(0.5, radius - 1), 0, Math.PI * 2);
-                cCtx.strokeStyle = "rgba(0, 0, 0, 0.7)";
-                cCtx.lineWidth = 1;
-                cCtx.stroke();
-            };
-
-            const clearCursor = () => {
-                const cCtx = cursorCanvas.getContext("2d");
-                cCtx.clearRect(0, 0, cursorCanvas.width, cursorCanvas.height);
-            };
-
             const drawPoint = (x, y) => {
-                const ctx = maskCanvas.getContext("2d");
-                ctx.lineWidth = parseInt(sizeSlider.value, 10);
-                ctx.lineCap = "round";
-                ctx.lineJoin = "round";
+                const mCtx = maskBuffer.getContext("2d");
+                mCtx.lineWidth = parseInt(sizeSlider.value, 10);
+                mCtx.lineCap = "round";
+                mCtx.lineJoin = "round";
 
                 if (currentMode === "brush") {
-                    ctx.globalCompositeOperation = "source-over";
-                    ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
-                    ctx.strokeStyle = "rgba(255, 255, 255, 0.9)";
+                    mCtx.globalCompositeOperation = "source-over";
+                    mCtx.fillStyle = "#ffffff";
+                    mCtx.strokeStyle = "#ffffff";
                 } else {
-                    ctx.globalCompositeOperation = "destination-out";
+                    mCtx.globalCompositeOperation = "destination-out";
                 }
-                ctx.lineTo(x, y);
-                ctx.stroke();
-                ctx.beginPath();
-                ctx.moveTo(x, y);
+                mCtx.lineTo(x, y);
+                mCtx.stroke();
+                mCtx.beginPath();
+                mCtx.moveTo(x, y);
+                render();
             };
 
-            maskCanvas.addEventListener("pointerdown", (e) => {
+            canvas.addEventListener("pointerdown", (e) => {
                 if (e.button !== 0) return;
                 e.preventDefault();
                 e.stopPropagation();
                 pushHistory();
                 isDrawing = true;
-                const ctx = maskCanvas.getContext("2d");
-                ctx.beginPath();
-                const pos = getCanvasPos(e);
+                const mCtx = maskBuffer.getContext("2d");
+                mCtx.beginPath();
+                const pos = getPos(e);
                 drawPoint(pos.x, pos.y);
-                drawCursor(pos.x, pos.y);
             });
 
-            maskCanvas.addEventListener("pointermove", (e) => {
-                const pos = getCanvasPos(e);
-                drawCursor(pos.x, pos.y);
+            canvas.addEventListener("pointermove", (e) => {
                 if (!isDrawing) return;
                 e.preventDefault();
                 e.stopPropagation();
+                const pos = getPos(e);
                 drawPoint(pos.x, pos.y);
             });
 
             const stopDrawing = () => {
                 if (!isDrawing) return;
                 isDrawing = false;
-                const ctx = maskCanvas.getContext("2d");
-                ctx.beginPath();
-                syncMaskValue();
+                const mCtx = maskBuffer.getContext("2d");
+                mCtx.beginPath();
+                syncMask();
             };
 
-            maskCanvas.addEventListener("pointerup", stopDrawing);
-            maskCanvas.addEventListener("pointerleave", () => {
-                stopDrawing();
-                clearCursor();
-            });
+            canvas.addEventListener("pointerup", stopDrawing);
+            canvas.addEventListener("pointerleave", stopDrawing);
 
-            window.addEventListener("keydown", (e) => {
+            // ---- タイマー/リスナー/Observerはノード削除時に解除 ----
+            const intervalId = setInterval(checkImageUpdate, 500);
+
+            const onKeyDown = (e) => {
                 if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && !e.shiftKey) {
-                    if (canvasWrap.matches(":hover") || node.is_selected) {
+                    if (container.matches(":hover") || node.is_selected) {
                         e.preventDefault();
                         e.stopPropagation();
                         undo();
                     }
                 }
-            });
+            };
+            window.addEventListener("keydown", onKeyDown);
 
-            const initLayout = () => {
-                this.setSize([Math.max(this.size[0], 580), Math.max(this.size[1], 620)]);
-                adjustSizeAndLayout();
+            const origRemoved = this.onRemoved;
+            this.onRemoved = function () {
+                clearInterval(intervalId);
+                window.removeEventListener("keydown", onKeyDown);
+                resizeObserver.disconnect();
+                if (origRemoved) origRemoved.apply(this, arguments);
             };
 
-            setTimeout(initLayout, 60);
+            setTimeout(() => {
+                this.setSize([Math.max(this.size[0], 520), Math.max(this.size[1], 580)]);
+                if (imgWidget && imgWidget.value) {
+                    loadImage(imgWidget.value);
+                }
+            }, 60);
         };
     }
 });
