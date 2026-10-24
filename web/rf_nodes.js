@@ -481,8 +481,9 @@ app.registerExtension({
                 const onExecuted = this.onExecuted;
                 this.onExecuted = function (message) {
                     if (onExecuted) onExecuted.apply(this, arguments);
-                    if (message && message.text && message.text[0] != null) {
-                        previewEl.value = message.text[0];
+                    if (message && message.text && Array.isArray(message.text)) {
+                        previewEl.value = message.text[0] != null ? message.text[0] : "";
+                        previewWidget.value = previewEl.value;
                         app.graph.setDirtyCanvas(true, true);
                     }
                 };

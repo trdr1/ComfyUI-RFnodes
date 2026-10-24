@@ -136,7 +136,7 @@ def _process_comment_out(text):
             out.append(line)
     return "\n".join(out)
 
-def process_wildcards(text, seed=None):
+def process_wildcards(text, seed=None, mode="random"):
     text = _process_comment_out(text)
     rng = np.random.default_rng(seed)
     w_dict = _load_wildcard_dict()
@@ -221,19 +221,26 @@ def process_wildcards(text, seed=None):
         matches = re.findall(pat, s)
         found = False
         for raw in matches:
-            mode = "rnd"
+            sub_mode = "rnd"
             kw = raw
             if kw.startswith("$"):
-                mode = "seq"
+                sub_mode = "seq"
                 kw = kw[1:]
             elif kw.startswith("@"):
-                mode = "bag"
+                sub_mode = "bag"
                 kw = kw[1:]
             norm_kw = _normalize(kw)
             opts = w_dict.get(norm_kw)
             if opts:
-                if mode in ["seq", "bag"]:
-                    chosen = _get_next_stateful(norm_kw, opts, mode, seed)
+                if mode == "all_lines_newline":
+                    clean_opts = [re.sub(r"^\s*[0-9.]+::", "", str(x), count=1) for x in opts]
+                    chosen = "\n".join(clean_opts)
+                elif mode == "all_lines_comma":
+                    clean_opts = [re.sub(r"^\s*[0-9.]+::", "", str(x), count=1) for x in opts]
+                    chosen = ", ".join(clean_opts)
+                elif sub_mode in ["seq", "bag"]:
+                    chosen = _get_next_stateful(norm_kw, opts, sub_mode, seed)
+                    chosen = re.sub(r"^\s*[0-9.]+::", "", str(chosen), count=1)
                 else:
                     probs = []
                     tot = 0.0
@@ -244,7 +251,7 @@ def process_wildcards(text, seed=None):
                         tot += val
                     norm = [p / tot for p in probs]
                     chosen = rng.choice(opts, p=norm)
-                chosen = re.sub(r"^\s*[0-9.]+::", "", str(chosen), count=1)
+                    chosen = re.sub(r"^\s*[0-9.]+::", "", str(chosen), count=1)
                 s = s.replace(f"__{raw}__", chosen, 1)
                 found = True
         return s, found
@@ -283,6 +290,7 @@ class RFWildcardProcessorNode:
                 "text": ("STRING", {"default": "", "multiline": True, "dynamicPrompts": False}),
                 "select_wildcard": (_get_wildcard_keys_list(), {"default": "Select Wildcard..."}),
                 "replace_single_wildcard": ("BOOLEAN", {"default": True}),
+                "wildcard_mode": (["random", "all_lines_newline", "all_lines_comma"], {"default": "random"}),
                 "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
             }
         }
@@ -293,6 +301,10 @@ class RFWildcardProcessorNode:
     FUNCTION = "process"
     CATEGORY = "RFNodes/Wildcard"
 
-    def process(self, text, select_wildcard, replace_single_wildcard, seed):
-        out = process_wildcards(text, seed=seed)
+    @classmethod
+    def IS_CHANGED(cls, text, select_wildcard, replace_single_wildcard, wildcard_mode, seed):
+        return float("nan")
+
+    def process(self, text, select_wildcard, replace_single_wildcard, wildcard_mode, seed):
+        out = process_wildcards(text, seed=seed, mode=wildcard_mode)
         return {"ui": {"text": [out]}, "result": (out,)}
