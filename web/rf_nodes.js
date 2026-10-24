@@ -1,4 +1,5 @@
 import { app } from "../../scripts/app.js";
+import { api } from "../../scripts/api.js";
 
 app.registerExtension({
     name: "RFNodes.Components",
@@ -365,6 +366,10 @@ app.registerExtension({
         }
 
         if (nodeData.name === "RFWildcardProcessorNode") {
+            // 原因が分かったら false に(または console.log 行を削除)
+            const DEBUG = true;
+            const dbg = (...args) => { if (DEBUG) console.log("[RF wildcard]", ...args); };
+
             const onNodeCreated = nodeType.prototype.onNodeCreated;
             nodeType.prototype.onNodeCreated = function () {
                 if (onNodeCreated) onNodeCreated.apply(this, arguments);
@@ -373,6 +378,8 @@ app.registerExtension({
                 const textWidget = this.widgets.find((w) => w.name === "text");
                 const selectWidget = this.widgets.find((w) => w.name === "select_wildcard");
                 const replaceWidget = this.widgets.find((w) => w.name === "replace_single_wildcard");
+
+                dbg("onNodeCreated: node id =", node.id);
 
                 if (textWidget) {
                     const origCompute = textWidget.computeSize;
@@ -383,6 +390,26 @@ app.registerExtension({
                         }
                         return origCompute ? origCompute.apply(this, arguments) : [width, 60];
                     };
+
+                    const syncTextVal = () => {
+                        if (textWidget.inputEl) {
+                            textWidget.value = textWidget.inputEl.value;
+                        }
+                    };
+
+                    if (textWidget.inputEl) {
+                        textWidget.inputEl.addEventListener("input", syncTextVal);
+                        textWidget.inputEl.addEventListener("change", syncTextVal);
+                    }
+
+                    const origSerialize = textWidget.serializeValue;
+                    textWidget.serializeValue = function () {
+                        syncTextVal();
+                        const v = origSerialize ? origSerialize.apply(this, arguments) : this.value;
+                        // 実行時にバックエンドへ送られる text の値を確認できる
+                        Promise.resolve(v).then((val) => dbg("serialize text ->", JSON.stringify(val)));
+                        return v;
+                    };
                 }
 
                 if (selectWidget) {
@@ -390,7 +417,7 @@ app.registerExtension({
                     selectWidget.callback = function (v) {
                         if (!v || v === defaultVal) return;
                         const doReplace = replaceWidget ? replaceWidget.value : true;
-                        let current = textWidget ? (textWidget.value || "") : "";
+                        let current = textWidget ? (textWidget.inputEl ? textWidget.inputEl.value : (textWidget.value || "")) : "";
                         const wcPattern = /__[\w.\-+/*\\]+?__/g;
                         const matches = current.match(wcPattern) || [];
 
@@ -407,6 +434,9 @@ app.registerExtension({
 
                         if (textWidget) {
                             textWidget.value = current;
+                            if (textWidget.inputEl) {
+                                textWidget.inputEl.value = current;
+                            }
                         }
                         selectWidget.value = defaultVal;
                         app.graph.setDirtyCanvas(true, true);
@@ -443,9 +473,11 @@ app.registerExtension({
                     margin: "0"
                 });
 
+                // 対策2: プレビュー欄の値を workflow 保存 / 実行入力に含めない
                 const previewWidget = this.addDOMWidget("populated_preview", "customtext", previewEl, {
                     getValue: () => previewEl.value,
-                    setValue: (v) => { previewEl.value = v || ""; }
+                    setValue: (v) => { previewEl.value = v || ""; },
+                    serialize: false,
                 });
 
                 const adjustLayout = () => {
@@ -478,14 +510,59 @@ app.registerExtension({
                     adjustLayout();
                 };
 
+                // ---------- 結果表示の更新(共通処理) ----------
+                let updateCount = 0;
+                const updatePreview = (source, message) => {
+                    updateCount++;
+                    const t = message && message.text;
+                    dbg(`#${updateCount} [${source}] node=${node.id} message.text =`, t);
+
+                    // 条件で弾いて黙ってスキップしない(理由をログに出す)
+                    if (t == null) {
+                        dbg(`#${updateCount} message.text が無いため更新スキップ。message =`, message);
+                        return;
+                    }
+
+                    // 対策1: [0] ではなく「最後の要素」= 最新の結果を使う
+                    let latest;
+                    if (Array.isArray(t)) {
+                        if (t.length > 1) {
+                            dbg(`#${updateCount} 警告: message.text が ${t.length} 要素に増えている(追記されている)。最後の要素を採用`);
+                        }
+                        latest = t[t.length - 1];
+                    } else {
+                        latest = t;
+                    }
+
+                    const str = latest != null ? String(latest) : "";
+                    const before = previewEl.value;
+                    // 対策3: 値は textarea だけに直接書く(widget.value との二重代入をしない)
+                    previewEl.value = str;
+                    dbg(`#${updateCount} 更新: changed=${before !== str}, length ${before.length} -> ${str.length}`);
+                    app.graph.setDirtyCanvas(true, true);
+                };
+
+                // 通常ルート: onExecuted
                 const onExecuted = this.onExecuted;
                 this.onExecuted = function (message) {
                     if (onExecuted) onExecuted.apply(this, arguments);
-                    if (message && message.text && Array.isArray(message.text)) {
-                        previewEl.value = message.text[0] != null ? message.text[0] : "";
-                        previewWidget.value = previewEl.value;
-                        app.graph.setDirtyCanvas(true, true);
-                    }
+                    updatePreview("onExecuted", message);
+                };
+
+                // 対策4(保険): 他の拡張が onExecuted を上書きしても更新できるよう、
+                // api の "executed" イベントも直接購読する
+                const onApiExecuted = (e) => {
+                    const d = e && e.detail;
+                    if (!d) return;
+                    if (String(d.node) !== String(node.id)) return;
+                    updatePreview("api.executed", d.output);
+                };
+                api.addEventListener("executed", onApiExecuted);
+
+                const origOnRemoved = this.onRemoved;
+                this.onRemoved = function () {
+                    api.removeEventListener("executed", onApiExecuted);
+                    if (origOnRemoved) origOnRemoved.apply(this, arguments);
                 };
 
                 setTimeout(() => {

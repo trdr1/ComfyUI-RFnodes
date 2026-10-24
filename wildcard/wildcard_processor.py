@@ -69,25 +69,42 @@ def _load_wildcard_dict():
             for root, _, files in os.walk(d, followlinks=True):
                 for file in files:
                     rel = os.path.relpath(os.path.join(root, file), d)
-                    key = _normalize(os.path.splitext(rel)[0])
+                    full_key = _normalize(os.path.splitext(rel)[0])
+                    base_key = _normalize(os.path.splitext(file)[0])
                     fpath = os.path.join(root, file)
+                    lines = None
                     if file.endswith(".txt"):
-                        res[key] = _load_file_lines(fpath)
+                        lines = _load_file_lines(fpath)
+                        res[full_key] = lines
+                        if base_key not in res:
+                            res[base_key] = lines
                     elif (file.endswith(".yaml") or file.endswith(".yml")) and yaml:
                         try:
                             with open(fpath, "r", encoding="utf-8") as f:
                                 ydata = yaml.load(f, Loader=yaml.FullLoader)
                             if isinstance(ydata, dict):
                                 for yk, yv in ydata.items():
-                                    subk = _normalize(f"{key}/{yk}") if key else _normalize(yk)
-                                    if isinstance(yv, list):
-                                        res[subk] = [str(item) for item in yv]
-                                    elif isinstance(yv, str):
-                                        res[subk] = [yv]
+                                    subk = _normalize(f"{full_key}/{yk}") if full_key else _normalize(yk)
+                                    base_subk = _normalize(yk)
+                                    val_list = [str(item) for item in yv] if isinstance(yv, list) else [str(yv)]
+                                    res[subk] = val_list
+                                    if base_subk not in res:
+                                        res[base_subk] = val_list
                         except Exception:
                             pass
         _wildcard_cache = res
         return _wildcard_cache
+
+def _find_wildcard_options(w_dict, kw):
+    norm_kw = _normalize(kw)
+    if norm_kw in w_dict:
+        return w_dict[norm_kw]
+    if "/" not in norm_kw:
+        target_suffix = f"/{norm_kw}"
+        for k, v in w_dict.items():
+            if k.endswith(target_suffix):
+                return v
+    return None
 
 def _is_numeric(s):
     return re.match(r"^-?(\d*\.?\d+|\d+\.?\d*)$", str(s).strip()) is not None
@@ -230,7 +247,7 @@ def process_wildcards(text, seed=None, mode="random"):
                 sub_mode = "bag"
                 kw = kw[1:]
             norm_kw = _normalize(kw)
-            opts = w_dict.get(norm_kw)
+            opts = _find_wildcard_options(w_dict, kw)
             if opts:
                 if mode == "all_lines_newline":
                     clean_opts = [re.sub(r"^\s*[0-9.]+::", "", str(x), count=1) for x in opts]
