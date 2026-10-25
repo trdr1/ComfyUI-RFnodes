@@ -18,11 +18,8 @@ class RFSaveImagePreserveMeta:
         return {
             "required": {
                 "images": ("IMAGE",),
-                "filename_prefix": ("STRING", {"default": "inpaint/result"}),
-            },
-            "optional": {
                 "original_image_name": (sorted(files),),
-                "original_file_path": ("STRING", {"default": "", "forceInput": True}),
+                "filename_prefix": ("STRING", {"default": "inpaint/result"}),
             },
             "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO"},
         }
@@ -32,16 +29,10 @@ class RFSaveImagePreserveMeta:
     OUTPUT_NODE = True
     CATEGORY = "RFNodes/Inpaint"
 
-    def save_images(self, images, filename_prefix="inpaint/result", original_image_name=None, original_file_path=None, prompt=None, extra_pnginfo=None):
-        target_path = None
-        if original_file_path and os.path.isfile(original_file_path):
-            target_path = original_file_path
-        elif original_image_name:
-            target_path = folder_paths.get_annotated_filepath(original_image_name)
-
-        if not target_path or not os.path.exists(target_path):
-            raise FileNotFoundError(f"Original image file not found. Specified path: '{original_file_path}', specified name: '{original_image_name}'")
-        orig_path = target_path
+    def save_images(self, images, original_image_name, filename_prefix="inpaint/result", prompt=None, extra_pnginfo=None):
+        orig_path = folder_paths.get_annotated_filepath(original_image_name)
+        if not os.path.exists(orig_path):
+            raise FileNotFoundError(f"Original image file not found: {orig_path}")
 
         full_output_folder, filename, counter, subfolder, filename_prefix = folder_paths.get_save_image_path(
             filename_prefix, self.output_dir, images[0].shape[1], images[0].shape[0]
