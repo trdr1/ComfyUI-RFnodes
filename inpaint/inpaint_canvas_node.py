@@ -48,3 +48,37 @@ class RFInpaintCanvasNode:
 
         mask_tensor = torch.from_numpy(mask_np)[None, ...]
         return (img_tensor, mask_tensor)
+
+
+class RFPromptCarrierNode:
+    """元画像のプロンプト(キャラ・作品名を含む文字列)を、画面で確認できる形で持つノード。
+    テキストはウィジェット値なので、ComfyUIが保存する prompt/workflow メタデータにそのまま残る。
+    OUTPUT_NODE なので、配線しなくても毎回プロンプトに含まれる。
+    """
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "prompt_text": ("STRING", {"default": "", "multiline": True}),
+            }
+        }
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("prompt_text",)
+    FUNCTION = "run"
+    OUTPUT_NODE = True
+    CATEGORY = "RFNodes/Inpaint"
+
+    def run(self, prompt_text):
+        return (prompt_text,)
+
+
+# __init__.py を編集しなくても使えるよう、ここでComfyUIへ直接登録する
+try:
+    import nodes as _comfy_nodes
+
+    _comfy_nodes.NODE_CLASS_MAPPINGS.setdefault("RFPromptCarrierNode", RFPromptCarrierNode)
+    _comfy_nodes.NODE_DISPLAY_NAME_MAPPINGS.setdefault("RFPromptCarrierNode", "元プロンプト（引き継ぎ）")
+except Exception as _e:
+    print(f"[RFNodes] RFPromptCarrierNode の登録に失敗しました: {_e}")
