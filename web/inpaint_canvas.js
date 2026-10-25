@@ -14,6 +14,24 @@ app.registerExtension({
             const imgWidget = this.widgets.find((w) => w.name === "image");
             const maskWidget = this.widgets.find((w) => w.name === "mask_data");
 
+            // ComfyUI標準の画像プレビューを無効化（キャンバスと二重表示になるため）
+            Object.defineProperty(this, "imgs", {
+                get() { return undefined; },
+                set(_) { /* 標準プレビューが画像を入れようとしても無視する */ },
+                configurable: true,
+            });
+            const removePreviewWidget = () => {
+                if (!node.widgets) return;
+                const before = node.widgets.length;
+                node.widgets = node.widgets.filter(
+                    (w) => !(w.name && w.name.includes("canvas-image-preview"))
+                );
+                if (node.widgets.length !== before) node.setDirtyCanvas(true, true);
+            };
+            removePreviewWidget();
+            setTimeout(removePreviewWidget, 100);
+            setTimeout(removePreviewWidget, 500);
+
             if (maskWidget) {
                 maskWidget.type = "hidden";
                 maskWidget.draw = () => {};
@@ -268,6 +286,7 @@ app.registerExtension({
                 const origCb = imgWidget.callback;
                 imgWidget.callback = function (v) {
                     if (origCb) origCb.apply(this, arguments);
+                    removePreviewWidget();
                     loadImage(v || (imgWidget ? imgWidget.value : ""));
                 };
             }
