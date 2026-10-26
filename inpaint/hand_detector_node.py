@@ -73,11 +73,11 @@ class RFHandDetectorNode:
         return {
             "required": {
                 "image": ("IMAGE",),
-                "model_name": (models, {"default": default_model}),
                 "threshold": ("FLOAT", {"default": 0.35, "min": 0.05, "max": 1.0, "step": 0.05}),
                 "padding": ("INT", {"default": 16, "min": 0, "max": 256, "step": 2}),
-                "max_detections": ("INT", {"default": 4, "min": 1, "max": 50, "step": 1}),
+                "max_hands": ("INT", {"default": 4, "min": 1, "max": 50, "step": 1}),
                 "mask_blur": ("INT", {"default": 8, "min": 0, "max": 64, "step": 2}),
+                "model_name": (models, {"default": default_model}),
             },
             "optional": {
                 "manual_mask": ("MASK",),
@@ -89,7 +89,7 @@ class RFHandDetectorNode:
     FUNCTION = "detect"
     CATEGORY = "RFNodes/Inpaint"
 
-    def detect(self, image, model_name, threshold, padding, max_detections, mask_blur, manual_mask=None):
+    def detect(self, image, threshold, padding, max_hands, mask_blur, model_name=DEFAULT_MODEL_FILENAME, manual_mask=None):
         model = _get_yolo_model(model_name)
         masks = []
         previews = []
@@ -111,7 +111,7 @@ class RFHandDetectorNode:
                     boxes.append((conf, xyxy, label_name))
 
             boxes.sort(key=lambda x: x[0], reverse=True)
-            boxes = boxes[:max_detections]
+            boxes = boxes[:max_hands]
 
             mask_img = Image.new("L", (w, h), 0)
             mask_draw = ImageDraw.Draw(mask_img)

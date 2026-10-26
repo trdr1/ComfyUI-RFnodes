@@ -378,13 +378,15 @@
         0.35,
         24,
         4,
-        8
+        8,
+        "hand_yolov8s.pt"
       ],
       "widgets_values_named": {
         "threshold": 0.35,
         "padding": 24,
         "max_hands": 4,
-        "mask_blur": 8
+        "mask_blur": 8,
+        "model_name": "hand_yolov8s.pt"
       }
     },
     {
