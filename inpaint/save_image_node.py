@@ -25,6 +25,23 @@ def _prompt_meta():
     return _PM
 
 
+def _safe_stem(path):
+    """入力画像のファイル名(拡張子なし)を、ファイル名に使える形にする"""
+    stem = os.path.splitext(os.path.basename(str(path)))[0]
+    for ch in '<>:"/\\|?*':
+        stem = stem.replace(ch, "_")
+    return stem.strip(" .") or "image"
+
+
+def _mask_to_image(mask):
+    """MASK テンソル(B,H,W または H,W)の先頭1枚を 8bit グレースケール画像にする"""
+    m = mask
+    if hasattr(m, "dim") and m.dim() == 3:
+        m = m[0]
+    arr = np.clip(255.0 * m.cpu().numpy(), 0, 255).astype(np.uint8)
+    return Image.fromarray(arr)
+
+
 class RFSaveImagePreserveMeta:
     def __init__(self):
         self.output_dir = folder_paths.get_output_directory()
@@ -45,6 +62,8 @@ class RFSaveImagePreserveMeta:
                 # フォルダ連続処理用: 読み込み中の画像パス。接続すると original_image_name より優先し、
                 # そのファイルのメタデータを引き継いで保存する
                 "original_image_path": ("STRING", {"default": "", "forceInput": True}),
+                # 修正対象のマスク(手の検出マスクなど)。接続すると結果と同じ場所にマスク画像とinfo.jsonを保存する
+                "mask": ("MASK",),
             },
             "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO"},
         }
@@ -54,7 +73,7 @@ class RFSaveImagePreserveMeta:
     OUTPUT_NODE = True
     CATEGORY = "RFNodes/Inpaint"
 
-    def save_images(self, images, original_image_name, filename_prefix="inpaint/result", prompt=None, extra_pnginfo=None, original_image_path=None):
+    def save_images(self, images, original_image_name, filename_prefix="inpaint/result", prompt=None, extra_pnginfo=None, original_image_path=None, mask=None):
         if original_image_path is not None:
             # フォルダ連続処理: 読み込み中の画像を元画像として扱う
             pm = _prompt_meta()
@@ -70,13 +89,44 @@ class RFSaveImagePreserveMeta:
         if not os.path.exists(orig_path):
             raise FileNotFoundError(f"Original image file not found: {orig_path}")
 
+        # 入力画像名をファイル名に含める: <prefix>_<入力画像名>_00001_.png
+        src_stem = _safe_stem(orig_path)
         full_output_folder, filename, counter, subfolder, filename_prefix = folder_paths.get_save_image_path(
-            filename_prefix, self.output_dir, images[0].shape[1], images[0].shape[0]
+            f"{filename_prefix}_{src_stem}", self.output_dir, images[0].shape[1], images[0].shape[0]
         )
 
         with Image.open(orig_path) as orig_img:
             orig_info = dict(orig_img.info)
             orig_exif = orig_img.getexif()
+
+        # この実行で保存する結果ファイル名(同じ実行の結果は同じマスクを共有する)
+        first_counter = counter
+        result_files = [f"{filename}_{first_counter + i:05}_.png" for i in range(len(images))]
+
+        mask_file = ""
+        if mask is not None:
+            mask_file = f"{filename}_{first_counter:05}_mask.png"
+            mask_img = _mask_to_image(mask)
+            mask_meta = PngInfo()
+            mask_meta.add_text("rf_source_image", orig_path)
+            mask_meta.add_text("rf_source_name", os.path.basename(orig_path))
+            mask_meta.add_text("rf_source_stem", src_stem)
+            mask_meta.add_text("rf_result_files", json.dumps(result_files, ensure_ascii=False))
+            mask_img.save(os.path.join(full_output_folder, mask_file), pnginfo=mask_meta)
+
+        # マスクと結果と元画像の対応表(後から解析するスクリプト用)
+        info_file = f"{filename}_{first_counter:05}_info.json"
+        info = {
+            "source_image": orig_path,
+            "source_name": os.path.basename(orig_path),
+            "source_stem": src_stem,
+            "image_size": [int(images[0].shape[1]), int(images[0].shape[0])],
+            "mask_file": mask_file,
+            "result_files": result_files,
+            "subfolder": subfolder,
+        }
+        with open(os.path.join(full_output_folder, info_file), "w", encoding="utf-8") as f:
+            json.dump(info, f, ensure_ascii=False, indent=2)
 
         results = []
         for batch_number, image in enumerate(images):
@@ -85,8 +135,17 @@ class RFSaveImagePreserveMeta:
 
             metadata = PngInfo()
             for k, v in orig_info.items():
-                if isinstance(v, (str, bytes)):
+                # rf_ で始まるキーはこのノードが毎回書き直すので、元画像のものは引き継がない
+                if isinstance(v, (str, bytes)) and not str(k).startswith("rf_"):
                     metadata.add_text(k, str(v))
+
+            # 結果画像からも元画像・マスクを辿れるようにする
+            metadata.add_text("rf_source_image", orig_path)
+            metadata.add_text("rf_source_name", os.path.basename(orig_path))
+            metadata.add_text("rf_source_stem", src_stem)
+            metadata.add_text("rf_mask_file", mask_file)
+            metadata.add_text("rf_info_file", info_file)
+            metadata.add_text("rf_batch_index", str(batch_number))
 
             if prompt is not None:
                 metadata.add_text("comfy_inpaint_prompt", json.dumps(prompt))

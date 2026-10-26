@@ -1,0 +1,398 @@
+import { app } from "../../scripts/app.js";
+import { api } from "../../scripts/api.js";
+
+app.registerExtension({
+    name: "RFNodes.RegionSwapper",
+    async beforeRegisterNodeDef(nodeType, nodeData) {
+        if (nodeData.name !== "RFRegionSwapperNode") return;
+
+        const onNodeCreated = nodeType.prototype.onNodeCreated;
+        nodeType.prototype.onNodeCreated = function () {
+            if (onNodeCreated) onNodeCreated.apply(this, arguments);
+
+            const node = this;
+
+            const container = document.createElement("div");
+            Object.assign(container.style, {
+                width: "100%",
+                height: "100%",
+                minHeight: "360px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "4px",
+                boxSizing: "border-box",
+                padding: "4px",
+                fontFamily: "sans-serif",
+                color: "#eee"
+            });
+
+            const topBar = document.createElement("div");
+            Object.assign(topBar.style, {
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: "6px",
+                flex: "none",
+                fontSize: "11px"
+            });
+
+            const leftControls = document.createElement("div");
+            Object.assign(leftControls.style, { display: "flex", gap: "4px", alignItems: "center" });
+
+            const refreshBtn = document.createElement("button");
+            refreshBtn.textContent = "🔄 最新読込";
+            const resetBtn = document.createElement("button");
+            resetBtn.textContent = "↩ 元画像にリセット";
+            const saveBtn = document.createElement("button");
+            saveBtn.textContent = "💾 確定画像を保存";
+
+            [refreshBtn, resetBtn, saveBtn].forEach((b) => {
+                Object.assign(b.style, {
+                    height: "24px",
+                    padding: "0 8px",
+                    background: "#2a2a38",
+                    border: "1px solid #4a4a5e",
+                    color: "#eee",
+                    borderRadius: "3px",
+                    cursor: "pointer",
+                    fontSize: "11px"
+                });
+            });
+            saveBtn.style.background = "#24422e";
+            saveBtn.style.borderColor = "#437a54";
+
+            leftControls.appendChild(refreshBtn);
+            leftControls.appendChild(resetBtn);
+            leftControls.appendChild(saveBtn);
+
+            const sessionSelect = document.createElement("select");
+            Object.assign(sessionSelect.style, {
+                height: "24px",
+                background: "#181822",
+                border: "1px solid #3c3c4f",
+                color: "#ddd",
+                borderRadius: "3px",
+                fontSize: "11px",
+                maxWidth: "240px"
+            });
+
+            topBar.appendChild(leftControls);
+            topBar.appendChild(sessionSelect);
+
+            const statusLabel = document.createElement("div");
+            Object.assign(statusLabel.style, {
+                fontSize: "10px",
+                color: "#8fc79a",
+                overflow: "hidden",
+                whiteSpace: "nowrap",
+                textOverflow: "ellipsis"
+            });
+
+            const stage = document.createElement("div");
+            Object.assign(stage.style, {
+                flex: "1 1 0",
+                minHeight: "0",
+                minWidth: "0",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                overflow: "hidden",
+                background: "#111116",
+                borderRadius: "4px",
+                outline: "1px solid #333342",
+                position: "relative"
+            });
+
+            const canvas = document.createElement("canvas");
+            Object.assign(canvas.style, {
+                display: "block",
+                flex: "none",
+                cursor: "pointer"
+            });
+
+            stage.appendChild(canvas);
+            container.appendChild(topBar);
+            container.appendChild(statusLabel);
+            container.appendChild(stage);
+
+            this.addDOMWidget("region_swapper_ui", "customswapper", container, {
+                getValue: () => "",
+                setValue: () => {},
+                getMinHeight: () => 360
+            });
+
+            let currentSession = null;
+            let origImageEl = null;
+            let maskImageEl = null;
+            let candidateImages = [];
+            let regions = [];
+            let sessionList = [];
+
+            const fitCanvas = () => {
+                const sw = stage.clientWidth;
+                const sh = stage.clientHeight;
+                if (!sw || !sh || !canvas.width || !canvas.height) return;
+                const scale = Math.min(sw / canvas.width, sh / canvas.height);
+                canvas.style.width = `${Math.floor(canvas.width * scale)}px`;
+                canvas.style.height = `${Math.floor(canvas.height * scale)}px`;
+            };
+
+            const resizeObserver = new ResizeObserver(() => fitCanvas());
+            resizeObserver.observe(stage);
+
+            const extractConnectedComponents = (mImg) => {
+                const off = document.createElement("canvas");
+                off.width = mImg.naturalWidth;
+                off.height = mImg.naturalHeight;
+                const ctx = off.getContext("2d");
+                ctx.drawImage(mImg, 0, 0);
+                const idata = ctx.getImageData(0, 0, off.width, off.height);
+                const data = idata.data;
+                const w = off.width;
+                const h = off.height;
+                const visited = new Uint8Array(w * h);
+
+                const foundRegions = [];
+                const step = 2;
+
+                for (let y = 0; y < h; y += step) {
+                    for (let x = 0; x < w; x += step) {
+                        const idx = y * w + x;
+                        if (visited[idx]) continue;
+                        if (data[idx * 4] > 64) {
+                            let minX = x;
+                            let maxX = x;
+                            let minY = y;
+                            let maxY = y;
+                            let count = 0;
+
+                            const queue = [idx];
+                            visited[idx] = 1;
+
+                            while (queue.length > 0) {
+                                const curr = queue.pop();
+                                const cy = Math.floor(curr / w);
+                                const cx = curr % w;
+                                count++;
+
+                                if (cx < minX) minX = cx;
+                                if (cx > maxX) maxX = cx;
+                                if (cy < minY) minY = cy;
+                                if (cy > maxY) maxY = cy;
+
+                                const neighbors = [
+                                    (cy - 1) * w + cx,
+                                    (cy + 1) * w + cx,
+                                    cy * w + (cx - 1),
+                                    cy * w + (cx + 1)
+                                ];
+
+                                for (const n of neighbors) {
+                                    if (n < 0 || n >= w * h) continue;
+                                    if (!visited[n] && data[n * 4] > 64) {
+                                        visited[n] = 1;
+                                        queue.push(n);
+                                    }
+                                }
+                            }
+
+                            if (count > 80) {
+                                const pad = 12;
+                                foundRegions.push({
+                                    bbox: [
+                                        Math.max(0, minX - pad),
+                                        Math.max(0, minY - pad),
+                                        Math.min(w, maxX + pad),
+                                        Math.min(h, maxY + pad)
+                                    ],
+                                    candidate_idx: 0
+                                });
+                            }
+                        }
+                    }
+                }
+                return foundRegions;
+            };
+
+            const render = () => {
+                if (!origImageEl || !canvas.width || !canvas.height) return;
+                const ctx = canvas.getContext("2d");
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(origImageEl, 0, 0, canvas.width, canvas.height);
+
+                regions.forEach((r) => {
+                    const [x1, y1, x2, y2] = r.bbox;
+                    const bw = x2 - x1;
+                    const bh = y2 - y1;
+
+                    if (r.candidate_idx > 0) {
+                        const cImg = candidateImages[r.candidate_idx - 1];
+                        if (cImg) {
+                            ctx.drawImage(cImg, x1, y1, bw, bh, x1, y1, bw, bh);
+                        }
+                    }
+
+                    ctx.save();
+                    ctx.strokeStyle = r.candidate_idx === 0 ? "rgba(255, 180, 0, 0.9)" : "rgba(80, 240, 120, 0.95)";
+                    ctx.lineWidth = Math.max(2, Math.floor(canvas.width / 400));
+                    ctx.strokeRect(x1, y1, bw, bh);
+
+                    ctx.fillStyle = "rgba(0, 0, 0, 0.75)";
+                    const badgeText = r.candidate_idx === 0 ? "元画像" : `生成 #${r.candidate_idx}`;
+                    ctx.font = "bold 13px sans-serif";
+                    const tw = ctx.measureText(badgeText).width;
+                    ctx.fillRect(x1, Math.max(0, y1 - 20), tw + 10, 20);
+
+                    ctx.fillStyle = r.candidate_idx === 0 ? "#ffd54f" : "#a5d6a7";
+                    ctx.fillText(badgeText, x1 + 5, Math.max(14, y1 - 5));
+                    ctx.restore();
+                });
+            };
+
+            const loadSession = async (session) => {
+                if (!session) return;
+                currentSession = session;
+                statusLabel.textContent = `読込中: ${session.source_name || session.info_path}`;
+
+                const loadSingle = (url) => new Promise((resolve, reject) => {
+                    const img = new Image();
+                    img.crossOrigin = "anonymous";
+                    img.onload = () => resolve(img);
+                    img.onerror = reject;
+                    img.src = url;
+                });
+
+                try {
+                    const sDir = session.subfolder ? `${session.subfolder}/` : "";
+                    const origUrl = api.apiURL(`/view?filename=${encodeURIComponent(session.source_name)}&type=input`);
+                    const maskUrl = api.apiURL(`/view?filename=${encodeURIComponent(sDir + session.mask_file)}&type=output`);
+
+                    origImageEl = await loadSingle(origUrl);
+                    maskImageEl = await loadSingle(maskUrl);
+
+                    const candidateUrls = (session.result_files || []).map((rf) =>
+                        api.apiURL(`/view?filename=${encodeURIComponent(sDir + rf)}&type=output`)
+                    );
+                    candidateImages = await Promise.all(candidateUrls.map(loadSingle));
+
+                    canvas.width = origImageEl.naturalWidth;
+                    canvas.height = origImageEl.naturalHeight;
+                    fitCanvas();
+
+                    regions = extractConnectedComponents(maskImageEl);
+                    render();
+                    statusLabel.textContent = `表示中: ${session.source_name} (領域数: ${regions.length}, 候補数: ${candidateImages.length})`;
+                } catch (err) {
+                    statusLabel.textContent = `読込エラー: ${err.message}`;
+                    throw err;
+                }
+            };
+
+            const fetchSessions = async () => {
+                try {
+                    const res = await fetch("/rf_nodes/latest_inpaint_sessions?limit=25");
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    const data = await res.json();
+                    sessionList = data.sessions || [];
+                    sessionSelect.innerHTML = "";
+                    sessionList.forEach((s, idx) => {
+                        const opt = document.createElement("option");
+                        opt.value = String(idx);
+                        opt.textContent = `${s.source_name || s.source_stem} (${s.result_files ? s.result_files.length : 0}枚)`;
+                        sessionSelect.appendChild(opt);
+                    });
+                    if (sessionList.length > 0) {
+                        await loadSession(sessionList[0]);
+                    } else {
+                        statusLabel.textContent = "保存されたインペイント結果が見つかりません";
+                    }
+                } catch (e) {
+                    statusLabel.textContent = `セッション取得失敗: ${e.message}`;
+                    throw e;
+                }
+            };
+
+            sessionSelect.addEventListener("change", () => {
+                const idx = parseInt(sessionSelect.value, 10);
+                if (sessionList[idx]) loadSession(sessionList[idx]);
+            });
+
+            refreshBtn.addEventListener("click", () => fetchSessions());
+
+            resetBtn.addEventListener("click", () => {
+                regions.forEach((r) => { r.candidate_idx = 0; });
+                render();
+            });
+
+            saveBtn.addEventListener("click", async () => {
+                if (!currentSession) return;
+                saveBtn.disabled = true;
+                saveBtn.textContent = "保存中…";
+                try {
+                    const payload = {
+                        session_path: currentSession.info_path,
+                        assignments: regions.map((r) => ({
+                            bbox: r.bbox,
+                            candidate_idx: r.candidate_idx
+                        }))
+                    };
+                    const res = await fetch("/rf_nodes/save_composed_image", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(payload)
+                    });
+                    if (!res.ok) {
+                        const errText = await res.text();
+                        throw new Error(errText);
+                    }
+                    const resData = await res.json();
+                    statusLabel.textContent = `保存完了: ${resData.result.filename}`;
+                } catch (e) {
+                    statusLabel.textContent = `保存失敗: ${e.message}`;
+                    throw e;
+                } finally {
+                    saveBtn.disabled = false;
+                    saveBtn.textContent = "💾 確定画像を保存";
+                }
+            });
+
+            canvas.addEventListener("click", (e) => {
+                if (!canvas.width || !canvas.height || regions.length === 0) return;
+                const rect = canvas.getBoundingClientRect();
+                const clickX = (e.clientX - rect.left) * (canvas.width / rect.width);
+                const clickY = (e.clientY - rect.top) * (canvas.height / rect.height);
+
+                let hit = false;
+                for (const r of regions) {
+                    const [x1, y1, x2, y2] = r.bbox;
+                    if (clickX >= x1 && clickX <= x2 && clickY >= y1 && clickY <= y2) {
+                        const maxCandidates = candidateImages.length;
+                        r.candidate_idx = (r.candidate_idx + 1) % (maxCandidates + 1);
+                        hit = true;
+                        break;
+                    }
+                }
+                if (hit) render();
+            });
+
+            const onApiExecuted = (e) => {
+                const d = e && e.detail;
+                if (!d || !d.output) return;
+                fetchSessions();
+            };
+            api.addEventListener("executed", onApiExecuted);
+
+            const origRemoved = this.onRemoved;
+            this.onRemoved = function () {
+                api.removeEventListener("executed", onApiExecuted);
+                resizeObserver.disconnect();
+                if (origRemoved) origRemoved.apply(this, arguments);
+            };
+
+            setTimeout(() => {
+                this.setSize([Math.max(this.size[0], 540), Math.max(this.size[1], 460)]);
+                fetchSessions();
+            }, 60);
+        };
+    }
+});

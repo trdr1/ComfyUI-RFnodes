@@ -2,10 +2,25 @@ from aiohttp import web
 from server import PromptServer
 from .db_manager import suggest_names, get_characters_for_series
 from .wildcard import refresh_wildcards
+from .inpaint.region_swapper_node import get_latest_sessions, compose_and_save
 
 def setup_routes():
     server = PromptServer.instance
     routes = server.app.router
+
+    async def api_latest_inpaint_sessions(request):
+        limit = int(request.query.get("limit", 20))
+        sessions = get_latest_sessions(limit)
+        return web.json_response({"sessions": sessions})
+
+    async def api_save_composed_image(request):
+        data = await request.json()
+        session_path = data.get("session_path")
+        assignments = data.get("assignments")
+        if not session_path or assignments is None:
+            return web.Response(status=400, text="session_path and assignments are required.")
+        result = compose_and_save(session_path, assignments)
+        return web.json_response({"success": True, "result": result})
 
     async def api_suggest(request):
         category = request.query.get("category", "characters")
@@ -24,6 +39,8 @@ def setup_routes():
         keys = refresh_wildcards()
         return web.json_response({"wildcards": keys})
 
+    routes.add_get("/rf_nodes/latest_inpaint_sessions", api_latest_inpaint_sessions)
+    routes.add_post("/rf_nodes/save_composed_image", api_save_composed_image)
     routes.add_get("/rf_nodes/suggest", api_suggest)
     routes.add_get("/rf_nodes/series_characters", api_series_characters)
     routes.add_get("/rf_nodes/refresh_wildcards", api_refresh_wildcards)
