@@ -9,17 +9,18 @@ def setup_routes():
     routes = server.app.router
 
     async def api_latest_inpaint_sessions(request):
-        limit = int(request.query.get("limit", 20))
-        sessions = get_latest_sessions(limit)
+        folder = request.query.get("folder", "inpaint_results")
+        limit = int(request.query.get("limit", 25))
+        sessions = get_latest_sessions(folder=folder, limit=limit)
         return web.json_response({"sessions": sessions})
 
     async def api_save_composed_image(request):
         data = await request.json()
-        session_path = data.get("session_path")
+        mask_path = data.get("mask_path") or data.get("session_path")
         assignments = data.get("assignments")
-        if not session_path or assignments is None:
-            return web.Response(status=400, text="session_path and assignments are required.")
-        result = compose_and_save(session_path, assignments)
+        if not mask_path or assignments is None:
+            return web.Response(status=400, text="mask_path and assignments are required.")
+        result = compose_and_save(mask_path, assignments)
         return web.json_response({"success": True, "result": result})
 
     async def api_suggest(request):

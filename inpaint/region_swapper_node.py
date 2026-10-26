@@ -12,6 +12,7 @@ class RFRegionSwapperNode:
     def INPUT_TYPES(cls):
         return {
             "required": {
+                "target_folder": ("STRING", {"default": "inpaint_results", "multiline": False}),
                 "active": ("BOOLEAN", {"default": True}),
             }
         }
@@ -21,46 +22,118 @@ class RFRegionSwapperNode:
     OUTPUT_NODE = True
     CATEGORY = "RFNodes/Inpaint"
 
-    def run(self, active=True):
-        return {"ui": {"status": ["Active" if active else "Inactive"]}}
+    def run(self, target_folder="inpaint_results", active=True):
+        return {"ui": {"status": [f"Monitoring: {target_folder}"]}}
 
-def get_latest_sessions(limit=20):
+def _get_view_params(full_path):
+    output_dir = os.path.abspath(folder_paths.get_output_directory())
+    input_dir = os.path.abspath(folder_paths.get_input_directory())
+    abs_path = os.path.abspath(full_path)
+
+    try:
+        rel_out = os.path.relpath(abs_path, output_dir)
+        if not rel_out.startswith(".."):
+            sub = os.path.dirname(rel_out).replace("\\", "/")
+            return {"filename": os.path.basename(abs_path), "subfolder": sub, "type": "output"}
+    except Exception:
+        pass
+
+    try:
+        rel_in = os.path.relpath(abs_path, input_dir)
+        if not rel_in.startswith(".."):
+            sub = os.path.dirname(rel_in).replace("\\", "/")
+            return {"filename": os.path.basename(abs_path), "subfolder": sub, "type": "input"}
+    except Exception:
+        pass
+
+    raise FileNotFoundError(f"File is outside ComfyUI input/output directories: {full_path}")
+
+def get_latest_sessions(folder="inpaint_results", limit=25):
     output_dir = folder_paths.get_output_directory()
-    pattern = os.path.join(output_dir, "**", "*_info.json")
-    files = glob.glob(pattern, recursive=True)
-    if not files:
+    clean_folder = (folder or "inpaint_results").strip().strip("/\\")
+    search_dir = os.path.join(output_dir, clean_folder)
+    if not os.path.isdir(search_dir):
         return []
-    files.sort(key=os.path.getmtime, reverse=True)
+
+    pattern = os.path.join(search_dir, "*_mask.png")
+    mask_files = glob.glob(pattern)
+    if not mask_files:
+        return []
+    mask_files.sort(key=os.path.getmtime, reverse=True)
+
     sessions = []
-    for fp in files[:limit]:
+    for m_path in mask_files[:limit]:
+        if not os.path.exists(m_path) or os.path.getsize(m_path) == 0:
+            continue
+
         try:
-            with open(fp, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            data["info_path"] = fp
-            sessions.append(data)
+            with Image.open(m_path) as m_img:
+                info_meta = dict(m_img.info)
         except Exception as e:
-            raise RuntimeError(f"Failed to read session file {fp}: {e}")
+            raise RuntimeError(f"Failed to read mask image metadata: {m_path}: {e}")
+
+        orig_path = info_meta.get("rf_source_image", "")
+        if not orig_path or not os.path.exists(orig_path):
+            continue
+
+        session_dir = os.path.dirname(m_path)
+        raw_results = info_meta.get("rf_result_files")
+        if raw_results:
+            try:
+                result_filenames = json.loads(raw_results)
+            except Exception:
+                result_filenames = []
+        else:
+            base_prefix = os.path.basename(m_path).replace("_mask.png", "")
+            matched = glob.glob(os.path.join(session_dir, f"{base_prefix}_*.png"))
+            result_filenames = [os.path.basename(x) for x in matched if not x.endswith("_mask.png")]
+
+        valid_result_paths = []
+        for rf in result_filenames:
+            full_r = os.path.join(session_dir, rf)
+            if os.path.exists(full_r):
+                valid_result_paths.append(full_r)
+
+        if not valid_result_paths:
+            continue
+
+        orig_view = _get_view_params(orig_path)
+        mask_view = _get_view_params(m_path)
+        result_views = [_get_view_params(rp) for rp in valid_result_paths]
+
+        label = f"{orig_view['filename']} [{os.path.basename(m_path).replace('.png', '')}] ({len(result_views)}枚)"
+        sessions.append({
+            "mask_path": m_path,
+            "source_image": orig_path,
+            "orig_view": orig_view,
+            "mask_view": mask_view,
+            "result_views": result_views,
+            "label": label,
+        })
     return sessions
 
-def compose_and_save(session_path, assignments):
-    if not os.path.exists(session_path):
-        raise FileNotFoundError(f"Session info file not found: {session_path}")
-
-    with open(session_path, "r", encoding="utf-8") as f:
-        info = json.load(f)
-
-    orig_path = info["source_image"]
-    if not os.path.exists(orig_path):
-        raise FileNotFoundError(f"Original source image not found: {orig_path}")
-
-    session_dir = os.path.dirname(session_path)
-    mask_file = info.get("mask_file")
-    mask_path = os.path.join(session_dir, mask_file) if mask_file else ""
+def compose_and_save(mask_path, assignments):
     if not os.path.exists(mask_path):
         raise FileNotFoundError(f"Mask file not found: {mask_path}")
 
-    result_files = info.get("result_files", [])
-    result_paths = [os.path.join(session_dir, rf) for rf in result_files]
+    with Image.open(mask_path) as m_img:
+        info_meta = dict(m_img.info)
+        full_mask = m_img.convert("L")
+
+    orig_path = info_meta.get("rf_source_image", "")
+    if not orig_path or not os.path.exists(orig_path):
+        raise FileNotFoundError(f"Original source image not found: {orig_path}")
+
+    session_dir = os.path.dirname(mask_path)
+    raw_results = info_meta.get("rf_result_files")
+    if raw_results:
+        result_filenames = json.loads(raw_results)
+    else:
+        base_prefix = os.path.basename(mask_path).replace("_mask.png", "")
+        matched = glob.glob(os.path.join(session_dir, f"{base_prefix}_*.png"))
+        result_filenames = [os.path.basename(x) for x in matched if not x.endswith("_mask.png")]
+
+    result_paths = [os.path.join(session_dir, rf) for rf in result_filenames]
     for rp in result_paths:
         if not os.path.exists(rp):
             raise FileNotFoundError(f"Candidate result image not found: {rp}")

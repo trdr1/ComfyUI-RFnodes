@@ -249,31 +249,39 @@ app.registerExtension({
                 });
             };
 
+            const toUrl = (viewParam) => {
+                const q = new URLSearchParams({
+                    filename: viewParam.filename,
+                    subfolder: viewParam.subfolder || "",
+                    type: viewParam.type || "output"
+                });
+                return api.apiURL(`/view?${q.toString()}`);
+            };
+
             const loadSession = async (session) => {
                 if (!session) return;
                 currentSession = session;
-                statusLabel.textContent = `読込中: ${session.source_name || session.info_path}`;
+                statusLabel.textContent = `読込中: ${session.label}`;
 
-                const loadSingle = (url) => new Promise((resolve, reject) => {
+                const loadSingle = (url, label) => new Promise((resolve, reject) => {
                     const img = new Image();
                     img.crossOrigin = "anonymous";
                     img.onload = () => resolve(img);
-                    img.onerror = reject;
+                    img.onerror = () => reject(new Error(`${label}の読込に失敗しました (${url})`));
                     img.src = url;
                 });
 
                 try {
-                    const sDir = session.subfolder ? `${session.subfolder}/` : "";
-                    const origUrl = api.apiURL(`/view?filename=${encodeURIComponent(session.source_name)}&type=input`);
-                    const maskUrl = api.apiURL(`/view?filename=${encodeURIComponent(sDir + session.mask_file)}&type=output`);
+                    const origUrl = toUrl(session.orig_view);
+                    const maskUrl = toUrl(session.mask_view);
 
-                    origImageEl = await loadSingle(origUrl);
-                    maskImageEl = await loadSingle(maskUrl);
+                    origImageEl = await loadSingle(origUrl, "元画像");
+                    maskImageEl = await loadSingle(maskUrl, "マスク画像");
 
-                    const candidateUrls = (session.result_files || []).map((rf) =>
-                        api.apiURL(`/view?filename=${encodeURIComponent(sDir + rf)}&type=output`)
+                    const candidateUrls = (session.result_views || []).map((v) => toUrl(v));
+                    candidateImages = await Promise.all(
+                        candidateUrls.map((u, idx) => loadSingle(u, `修正候補#${idx + 1}`))
                     );
-                    candidateImages = await Promise.all(candidateUrls.map(loadSingle));
 
                     canvas.width = origImageEl.naturalWidth;
                     canvas.height = origImageEl.naturalHeight;
@@ -281,30 +289,39 @@ app.registerExtension({
 
                     regions = extractConnectedComponents(maskImageEl);
                     render();
-                    statusLabel.textContent = `表示中: ${session.source_name} (領域数: ${regions.length}, 候補数: ${candidateImages.length})`;
+                    statusLabel.textContent = `表示中: ${session.label} (検出領域: ${regions.length})`;
                 } catch (err) {
                     statusLabel.textContent = `読込エラー: ${err.message}`;
                     throw err;
                 }
             };
 
+            const getTargetFolder = () => {
+                const w = node.widgets && node.widgets.find((x) => x.name === "target_folder");
+                return (w && w.value) ? String(w.value).trim() : "inpaint_results";
+            };
+
             const fetchSessions = async () => {
+                const folder = getTargetFolder();
                 try {
-                    const res = await fetch("/rf_nodes/latest_inpaint_sessions?limit=25");
-                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    const res = await fetch(`/rf_nodes/latest_inpaint_sessions?folder=${encodeURIComponent(folder)}&limit=25`);
+                    if (!res.ok) {
+                        const errTxt = await res.text();
+                        throw new Error(`HTTP ${res.status}: ${errTxt}`);
+                    }
                     const data = await res.json();
                     sessionList = data.sessions || [];
                     sessionSelect.innerHTML = "";
                     sessionList.forEach((s, idx) => {
                         const opt = document.createElement("option");
                         opt.value = String(idx);
-                        opt.textContent = `${s.source_name || s.source_stem} (${s.result_files ? s.result_files.length : 0}枚)`;
+                        opt.textContent = s.label;
                         sessionSelect.appendChild(opt);
                     });
                     if (sessionList.length > 0) {
                         await loadSession(sessionList[0]);
                     } else {
-                        statusLabel.textContent = "保存されたインペイント結果が見つかりません";
+                        statusLabel.textContent = `対象フォルダ (${folder}) にマスク画像が見つかりません`;
                     }
                 } catch (e) {
                     statusLabel.textContent = `セッション取得失敗: ${e.message}`;
@@ -330,7 +347,7 @@ app.registerExtension({
                 saveBtn.textContent = "保存中…";
                 try {
                     const payload = {
-                        session_path: currentSession.info_path,
+                        mask_path: currentSession.mask_path,
                         assignments: regions.map((r) => ({
                             bbox: r.bbox,
                             candidate_idx: r.candidate_idx

@@ -24,9 +24,11 @@
         "Node name for S&R": "RFRegionSwapperNode"
       },
       "widgets_values": [
+        "inpaint_results",
         true
       ],
       "widgets_values_named": {
+        "target_folder": "inpaint_results",
         "active": true
       },
       "title": "【手修正コラージュ】マスク領域入替・確定保存"
@@ -324,11 +326,11 @@
       },
       "widgets_values": [
         "example.png",
-        "inpaint_hand_batch/result"
+        "inpaint_results/result"
       ],
       "widgets_values_named": {
         "original_image_name": "example.png",
-        "filename_prefix": "inpaint_hand_batch/result"
+        "filename_prefix": "inpaint_results/result"
       }
     },
     {
