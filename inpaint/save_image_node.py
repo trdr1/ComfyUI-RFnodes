@@ -5,6 +5,26 @@ from PIL import Image
 from PIL.PngImagePlugin import PngInfo
 import folder_paths
 
+_PM = None
+
+
+def _prompt_meta():
+    """同フォルダの prompt_meta.py を読み込む(パッケージ読み込みでも直接読み込みでも動くようにする)"""
+    global _PM
+    if _PM is not None:
+        return _PM
+    try:
+        from . import prompt_meta as _m
+    except Exception:
+        import importlib.util
+        _p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "prompt_meta.py")
+        _spec = importlib.util.spec_from_file_location("rf_inpaint_prompt_meta", _p)
+        _m = importlib.util.module_from_spec(_spec)
+        _spec.loader.exec_module(_m)
+    _PM = _m
+    return _PM
+
+
 class RFSaveImagePreserveMeta:
     def __init__(self):
         self.output_dir = folder_paths.get_output_directory()
@@ -21,6 +41,11 @@ class RFSaveImagePreserveMeta:
                 "original_image_name": (sorted(files),),
                 "filename_prefix": ("STRING", {"default": "inpaint/result"}),
             },
+            "optional": {
+                # フォルダ連続処理用: 読み込み中の画像パス。接続すると original_image_name より優先し、
+                # そのファイルのメタデータを引き継いで保存する
+                "original_image_path": ("STRING", {"default": "", "forceInput": True}),
+            },
             "hidden": {"prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO"},
         }
 
@@ -29,8 +54,19 @@ class RFSaveImagePreserveMeta:
     OUTPUT_NODE = True
     CATEGORY = "RFNodes/Inpaint"
 
-    def save_images(self, images, original_image_name, filename_prefix="inpaint/result", prompt=None, extra_pnginfo=None):
-        orig_path = folder_paths.get_annotated_filepath(original_image_name)
+    def save_images(self, images, original_image_name, filename_prefix="inpaint/result", prompt=None, extra_pnginfo=None, original_image_path=None):
+        if original_image_path is not None:
+            # フォルダ連続処理: 読み込み中の画像を元画像として扱う
+            pm = _prompt_meta()
+            orig_path = pm.resolve_image_path(original_image_path)
+            if not orig_path:
+                raise FileNotFoundError(f"Original image file not found: {original_image_path}")
+            # 保存メタデータ内の元プロンプトノードを、この画像から読み取ったプロンプトに揃える
+            prompt, extra_pnginfo = pm.inject_carrier_text(
+                prompt, extra_pnginfo, pm.extract_original_prompt(orig_path)
+            )
+        else:
+            orig_path = folder_paths.get_annotated_filepath(original_image_name)
         if not os.path.exists(orig_path):
             raise FileNotFoundError(f"Original image file not found: {orig_path}")
 

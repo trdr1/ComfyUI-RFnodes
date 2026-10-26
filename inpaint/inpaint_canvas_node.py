@@ -6,6 +6,26 @@ import numpy as np
 from PIL import Image, ImageOps
 import folder_paths
 
+_PM = None
+
+
+def _prompt_meta():
+    """同フォルダの prompt_meta.py を読み込む(パッケージ読み込みでも直接読み込みでも動くようにする)"""
+    global _PM
+    if _PM is not None:
+        return _PM
+    try:
+        from . import prompt_meta as _m
+    except Exception:
+        import importlib.util
+        _p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "prompt_meta.py")
+        _spec = importlib.util.spec_from_file_location("rf_inpaint_prompt_meta", _p)
+        _m = importlib.util.module_from_spec(_spec)
+        _spec.loader.exec_module(_m)
+    _PM = _m
+    return _PM
+
+
 class RFInpaintCanvasNode:
     @classmethod
     def INPUT_TYPES(cls):
@@ -61,7 +81,12 @@ class RFPromptCarrierNode:
         return {
             "required": {
                 "prompt_text": ("STRING", {"default": "", "multiline": True}),
-            }
+            },
+            "optional": {
+                # フォルダ連続処理用: 読み込み中の画像パス(LoadImagesFromFolderKJ の image_path を接続)。
+                # 接続すると、その画像のメタデータから元プロンプトを読み取って prompt_text に書き出す。
+                "image_path": ("STRING", {"default": "", "forceInput": True}),
+            },
         }
 
     RETURN_TYPES = ("STRING",)
@@ -70,8 +95,15 @@ class RFPromptCarrierNode:
     OUTPUT_NODE = True
     CATEGORY = "RFNodes/Inpaint"
 
-    def run(self, prompt_text):
-        return (prompt_text,)
+    def run(self, prompt_text, image_path=None):
+        text = prompt_text
+        if image_path is not None:
+            # image_path が接続されているときは、画像のメタデータを正とする
+            # (前の画像のプロンプトが残らないよう、見つからなければ空にする)
+            pm = _prompt_meta()
+            src = pm.resolve_image_path(image_path)
+            text = pm.extract_original_prompt(src) if src else ""
+        return {"ui": {"text": [text]}, "result": (text,)}
 
 
 # __init__.py を編集しなくても使えるよう、ここでComfyUIへ直接登録する

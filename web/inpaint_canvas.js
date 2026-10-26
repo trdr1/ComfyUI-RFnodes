@@ -4,6 +4,25 @@ import { api } from "../../scripts/api.js";
 app.registerExtension({
     name: "RFNodes.InpaintCanvas",
     async beforeRegisterNodeDef(nodeType, nodeData) {
+        // 元プロンプトノード: image_path が接続されているとき、実行結果(読み取ったプロンプト)を入力欄に書き出す
+        if (nodeData.name === "RFPromptCarrierNode") {
+            const origCarrierExecuted = nodeType.prototype.onExecuted;
+            nodeType.prototype.onExecuted = function (message) {
+                if (origCarrierExecuted) origCarrierExecuted.apply(this, arguments);
+                const t = message && message.text;
+                if (t == null) return;
+                const linked = this.inputs && this.inputs.some((i) => i.name === "image_path" && i.link != null);
+                if (!linked) return;
+                const text = Array.isArray(t) ? String(t.length ? t[t.length - 1] : "") : String(t);
+                const w = this.widgets && this.widgets.find((x) => x.name === "prompt_text");
+                if (!w) return;
+                w.value = text;
+                if (w.inputEl) w.inputEl.value = text;
+                this.setDirtyCanvas(true, true);
+            };
+            return;
+        }
+
         if (nodeData.name !== "RFInpaintCanvasNode") return;
 
         const onNodeCreated = nodeType.prototype.onNodeCreated;
