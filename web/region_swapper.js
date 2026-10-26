@@ -44,9 +44,11 @@ app.registerExtension({
             const resetBtn = document.createElement("button");
             resetBtn.textContent = "↩ 元画像にリセット";
             const saveBtn = document.createElement("button");
-            saveBtn.textContent = "💾 確定画像を保存";
+            saveBtn.textContent = "💾 確定保存";
+            const sendInputBtn = document.createElement("button");
+            sendInputBtn.textContent = "🚀 入力に送る";
 
-            [refreshBtn, resetBtn, saveBtn].forEach((b) => {
+            [refreshBtn, resetBtn, saveBtn, sendInputBtn].forEach((b) => {
                 Object.assign(b.style, {
                     height: "24px",
                     padding: "0 8px",
@@ -60,10 +62,13 @@ app.registerExtension({
             });
             saveBtn.style.background = "#24422e";
             saveBtn.style.borderColor = "#437a54";
+            sendInputBtn.style.background = "#233348";
+            sendInputBtn.style.borderColor = "#3d587a";
 
             leftControls.appendChild(refreshBtn);
             leftControls.appendChild(resetBtn);
             leftControls.appendChild(saveBtn);
+            leftControls.appendChild(sendInputBtn);
 
             const sessionSelect = document.createElement("select");
             Object.assign(sessionSelect.style, {
@@ -341,56 +346,150 @@ app.registerExtension({
                 render();
             });
 
+            const performSaveComposed = async () => {
+                if (!currentSession) throw new Error("セッションが読み込まれていません");
+                const payload = {
+                    mask_path: currentSession.mask_path,
+                    assignments: regions.map((r) => ({
+                        bbox: r.bbox,
+                        candidate_idx: r.candidate_idx
+                    }))
+                };
+                const res = await fetch("/rf_nodes/save_composed_image", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+                if (!res.ok) {
+                    const errText = await res.text();
+                    throw new Error(errText);
+                }
+                const resData = await res.json();
+                return resData.result;
+            };
+
             saveBtn.addEventListener("click", async () => {
-                if (!currentSession) return;
                 saveBtn.disabled = true;
                 saveBtn.textContent = "保存中…";
                 try {
-                    const payload = {
-                        mask_path: currentSession.mask_path,
-                        assignments: regions.map((r) => ({
-                            bbox: r.bbox,
-                            candidate_idx: r.candidate_idx
-                        }))
-                    };
-                    const res = await fetch("/rf_nodes/save_composed_image", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify(payload)
-                    });
-                    if (!res.ok) {
-                        const errText = await res.text();
-                        throw new Error(errText);
-                    }
-                    const resData = await res.json();
-                    statusLabel.textContent = `保存完了: ${resData.result.filename}`;
+                    const result = await performSaveComposed();
+                    statusLabel.textContent = `保存完了: ${result.filename}`;
                 } catch (e) {
                     statusLabel.textContent = `保存失敗: ${e.message}`;
                     throw e;
                 } finally {
                     saveBtn.disabled = false;
-                    saveBtn.textContent = "💾 確定画像を保存";
+                    saveBtn.textContent = "💾 確定保存";
                 }
             });
 
-            canvas.addEventListener("click", (e) => {
-                if (!canvas.width || !canvas.height || regions.length === 0) return;
-                const rect = canvas.getBoundingClientRect();
-                const clickX = (e.clientX - rect.left) * (canvas.width / rect.width);
-                const clickY = (e.clientY - rect.top) * (canvas.height / rect.height);
+            sendInputBtn.addEventListener("click", async () => {
+                sendInputBtn.disabled = true;
+                sendInputBtn.textContent = "転送中…";
+                try {
+                    const targetCanvasNode = app.graph && app.graph._nodes && app.graph._nodes.find((n) => n.type === "RFInpaintCanvasNode");
+                    if (!targetCanvasNode) {
+                        throw new Error("ワークフロー内に RFInpaintCanvasNode（インペイント入力ノード）が見つかりません");
+                    }
 
-                let hit = false;
+                    const savedResult = await performSaveComposed();
+                    const viewUrl = api.apiURL(
+                        `/view?filename=${encodeURIComponent(savedResult.filename)}&subfolder=${encodeURIComponent(savedResult.subfolder || "")}&type=output`
+                    );
+
+                    const imgResp = await fetch(viewUrl);
+                    if (!imgResp.ok) throw new Error(`合成画像の取得に失敗しました: HTTP ${imgResp.status}`);
+                    const blob = await imgResp.blob();
+                    const file = new File([blob], savedResult.filename, { type: blob.type || "image/png" });
+
+                    const formData = new FormData();
+                    formData.append("image", file);
+                    formData.append("type", "input");
+
+                    const upResp = await api.fetchApi("/upload/image", { method: "POST", body: formData });
+                    if (!upResp.ok) throw new Error(`入力フォルダへのアップロードに失敗しました: HTTP ${upResp.status}`);
+                    const upData = await upResp.json();
+                    const uploadedName = upData.subfolder ? `${upData.subfolder}/${upData.name}` : upData.name;
+
+                    const imgWidget = targetCanvasNode.widgets && targetCanvasNode.widgets.find((w) => w.name === "image");
+                    if (imgWidget) {
+                        const values = imgWidget.options && imgWidget.options.values;
+                        if (Array.isArray(values) && !values.includes(uploadedName)) {
+                            values.push(uploadedName);
+                        }
+                        imgWidget.value = uploadedName;
+                        if (imgWidget.callback) imgWidget.callback(uploadedName);
+                    }
+
+                    const maskWidget = targetCanvasNode.widgets && targetCanvasNode.widgets.find((w) => w.name === "mask_data");
+                    if (maskWidget) maskWidget.value = "";
+
+                    targetCanvasNode.setDirtyCanvas(true, true);
+                    app.graph.setDirtyCanvas(true, true);
+                    statusLabel.textContent = `入力へ転送完了: ${uploadedName} (元プロンプト引き継ぎ済)`;
+                } catch (e) {
+                    statusLabel.textContent = `転送失敗: ${e.message}`;
+                    throw e;
+                } finally {
+                    sendInputBtn.disabled = false;
+                    sendInputBtn.textContent = "🚀 入力に送る";
+                }
+            });
+
+            const stepRegionCandidate = (r, forward) => {
+                const totalCount = candidateImages.length + 1;
+                if (forward) {
+                    r.candidate_idx = (r.candidate_idx + 1) % totalCount;
+                } else {
+                    r.candidate_idx = (r.candidate_idx - 1 + totalCount) % totalCount;
+                }
+            };
+
+            const findHitRegion = (clientX, clientY) => {
+                if (!canvas.width || !canvas.height || regions.length === 0) return null;
+                const rect = canvas.getBoundingClientRect();
+                const clickX = (clientX - rect.left) * (canvas.width / rect.width);
+                const clickY = (clientY - rect.top) * (canvas.height / rect.height);
+
                 for (const r of regions) {
                     const [x1, y1, x2, y2] = r.bbox;
                     if (clickX >= x1 && clickX <= x2 && clickY >= y1 && clickY <= y2) {
-                        const maxCandidates = candidateImages.length;
-                        r.candidate_idx = (r.candidate_idx + 1) % (maxCandidates + 1);
-                        hit = true;
-                        break;
+                        return r;
                     }
                 }
-                if (hit) render();
+                return null;
+            };
+
+            canvas.addEventListener("contextmenu", (e) => {
+                e.preventDefault();
+                e.stopPropagation();
             });
+
+            canvas.addEventListener("pointerdown", (e) => {
+                if (e.button !== 0 && e.button !== 2) return;
+                const r = findHitRegion(e.clientX, e.clientY);
+                if (!r) return;
+
+                e.preventDefault();
+                e.stopPropagation();
+
+                const isForward = e.button === 0 && !e.shiftKey;
+                stepRegionCandidate(r, isForward);
+                render();
+            });
+
+            canvas.addEventListener("wheel", (e) => {
+                if (e.deltaY === 0) return;
+                const r = findHitRegion(e.clientX, e.clientY);
+                if (!r) return;
+
+                e.preventDefault();
+                e.stopPropagation();
+
+                const isForward = e.deltaY < 0;
+                stepRegionCandidate(r, isForward);
+                render();
+            }, { passive: false });
 
             const onApiExecuted = (e) => {
                 const d = e && e.detail;
