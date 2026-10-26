@@ -72,11 +72,19 @@ def get_latest_sessions(folder="inpaint_results", limit=25):
         except Exception as e:
             raise RuntimeError(f"Failed to read mask image metadata: {m_path}: {e}")
 
-        orig_path = info_meta.get("rf_source_image", "")
-        if not orig_path or not os.path.exists(orig_path):
-            continue
-
         session_dir = os.path.dirname(m_path)
+        orig_file = info_meta.get("rf_orig_file", os.path.basename(m_path).replace("_mask.png", "_orig.png"))
+        orig_full = os.path.join(session_dir, orig_file)
+
+        if os.path.exists(orig_full):
+            orig_path = orig_full
+            orig_view = {"filename": orig_file, "subfolder": clean_folder, "type": "output"}
+        else:
+            orig_path = info_meta.get("rf_source_image", "")
+            if not orig_path or not os.path.exists(orig_path):
+                continue
+            orig_view = _get_view_params(orig_path)
+
         raw_results = info_meta.get("rf_result_files")
         if raw_results:
             try:
@@ -86,20 +94,19 @@ def get_latest_sessions(folder="inpaint_results", limit=25):
         else:
             base_prefix = os.path.basename(m_path).replace("_mask.png", "")
             matched = glob.glob(os.path.join(session_dir, f"{base_prefix}_*.png"))
-            result_filenames = [os.path.basename(x) for x in matched if not x.endswith("_mask.png")]
+            result_filenames = [os.path.basename(x) for x in matched if not x.endswith("_mask.png") and not x.endswith("_orig.png")]
 
         valid_result_paths = []
         for rf in result_filenames:
             full_r = os.path.join(session_dir, rf)
-            if os.path.exists(full_r):
+            if os.path.exists(full_r) and not full_r.endswith("_orig.png"):
                 valid_result_paths.append(full_r)
 
         if not valid_result_paths:
             continue
 
-        orig_view = _get_view_params(orig_path)
-        mask_view = _get_view_params(m_path)
-        result_views = [_get_view_params(rp) for rp in valid_result_paths]
+        mask_view = {"filename": os.path.basename(m_path), "subfolder": clean_folder, "type": "output"}
+        result_views = [{"filename": os.path.basename(rp), "subfolder": clean_folder, "type": "output"} for rp in valid_result_paths]
 
         label = f"{orig_view['filename']} [{os.path.basename(m_path).replace('.png', '')}] ({len(result_views)}枚)"
         sessions.append({

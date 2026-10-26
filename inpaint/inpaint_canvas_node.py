@@ -38,8 +38,8 @@ class RFInpaintCanvasNode:
             }
         }
 
-    RETURN_TYPES = ("IMAGE", "MASK")
-    RETURN_NAMES = ("image", "mask")
+    RETURN_TYPES = ("IMAGE", "MASK", "STRING")
+    RETURN_NAMES = ("image", "mask", "image_path")
     FUNCTION = "process"
     CATEGORY = "RFNodes/Inpaint"
 
@@ -67,7 +67,7 @@ class RFInpaintCanvasNode:
             mask_np = np.zeros((h, w), dtype=np.float32)
 
         mask_tensor = torch.from_numpy(mask_np)[None, ...]
-        return (img_tensor, mask_tensor)
+        return (img_tensor, mask_tensor, image_path)
 
 
 class RFPromptCarrierNode:

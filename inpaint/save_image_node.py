@@ -103,6 +103,19 @@ class RFSaveImagePreserveMeta:
         first_counter = counter
         result_files = [f"{filename}_{first_counter + i:05}_.png" for i in range(len(images))]
 
+        # 元画像を同一フォルダに複製保存（セッション自己完結化）
+        orig_file = f"{filename}_{first_counter:05}_orig.png"
+        orig_save_kwargs = {}
+        if orig_info:
+            orig_save_meta = PngInfo()
+            for k, v in orig_info.items():
+                if isinstance(v, (str, bytes)):
+                    orig_save_meta.add_text(k, str(v))
+            orig_save_kwargs["pnginfo"] = orig_save_meta
+        if orig_exif:
+            orig_save_kwargs["exif"] = orig_exif
+        orig_img.save(os.path.join(full_output_folder, orig_file), compress_level=4, **orig_save_kwargs)
+
         mask_file = ""
         if mask is not None:
             mask_file = f"{filename}_{first_counter:05}_mask.png"
@@ -111,6 +124,7 @@ class RFSaveImagePreserveMeta:
             mask_meta.add_text("rf_source_image", orig_path)
             mask_meta.add_text("rf_source_name", os.path.basename(orig_path))
             mask_meta.add_text("rf_source_stem", src_stem)
+            mask_meta.add_text("rf_orig_file", orig_file)
             mask_meta.add_text("rf_result_files", json.dumps(result_files, ensure_ascii=False))
             mask_img.save(os.path.join(full_output_folder, mask_file), pnginfo=mask_meta)
 
