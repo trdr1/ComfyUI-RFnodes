@@ -1,9 +1,36 @@
 {
   "id": "3950cff4-b018-497c-8e84-8347ab7faa11",
   "revision": 0,
-  "last_node_id": 28,
+  "last_node_id": 29,
   "last_link_id": 34,
   "nodes": [
+    {
+      "id": 29,
+      "type": "RFRegionSwapperNode",
+      "pos": [
+        1540,
+        600
+      ],
+      "size": [
+        560,
+        500
+      ],
+      "flags": {},
+      "order": 25,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "RFRegionSwapperNode"
+      },
+      "widgets_values": [
+        true
+      ],
+      "widgets_values_named": {
+        "active": true
+      },
+      "title": "【手修正コラージュ】マスク領域入替・確定保存"
+    },
     {
       "id": 1,
       "type": "CheckpointLoaderSimple",
@@ -297,11 +324,11 @@
       },
       "widgets_values": [
         "example.png",
-        "inpaint_hand/result"
+        "inpaint_hand_batch/result"
       ],
       "widgets_values_named": {
         "original_image_name": "example.png",
-        "filename_prefix": "inpaint_hand/result"
+        "filename_prefix": "inpaint_hand_batch/result"
       }
     },
     {
