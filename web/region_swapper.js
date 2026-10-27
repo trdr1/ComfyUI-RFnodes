@@ -15,6 +15,7 @@ app.registerExtension({
             const container = document.createElement("div");
             Object.assign(container.style, {
                 width: "100%",
+                maxWidth: "100%",
                 height: "100%",
                 minHeight: "360px",
                 display: "flex",
@@ -23,7 +24,8 @@ app.registerExtension({
                 boxSizing: "border-box",
                 padding: "4px",
                 fontFamily: "sans-serif",
-                color: "#eee"
+                color: "#eee",
+                overflow: "hidden"
             });
 
             const topBar = document.createElement("div");
@@ -121,9 +123,7 @@ app.registerExtension({
                 flex: "1 1 0",
                 minHeight: "0",
                 minWidth: "0",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
+                width: "100%",
                 overflow: "hidden",
                 background: "#111116",
                 borderRadius: "4px",
@@ -134,8 +134,10 @@ app.registerExtension({
             const canvas = document.createElement("canvas");
             Object.assign(canvas.style, {
                 display: "block",
-                flex: "none",
-                margin: "auto",
+                position: "absolute",
+                left: "50%",
+                top: "50%",
+                transform: "translate(-50%, -50%)",
                 touchAction: "none",
                 userSelect: "none",
                 cursor: "pointer"

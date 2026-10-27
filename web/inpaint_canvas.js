@@ -60,13 +60,15 @@ app.registerExtension({
             const container = document.createElement("div");
             Object.assign(container.style, {
                 width: "100%",
+                maxWidth: "100%",
                 height: "100%",
                 minHeight: "200px",
                 display: "flex",
                 flexDirection: "column",
                 gap: "4px",
                 boxSizing: "border-box",
-                padding: "2px"
+                padding: "2px",
+                overflow: "hidden"
             });
 
             const toolbar = document.createElement("div");
@@ -140,17 +142,18 @@ app.registerExtension({
                 flex: "1 1 0",
                 minHeight: "0",
                 minWidth: "0",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
+                width: "100%",
+                position: "relative",
                 overflow: "hidden"
             });
 
             const canvas = document.createElement("canvas");
             Object.assign(canvas.style, {
                 display: "block",
-                flex: "none",
-                margin: "auto",
+                position: "absolute",
+                left: "50%",
+                top: "50%",
+                transform: "translate(-50%, -50%)",
                 touchAction: "none",
                 userSelect: "none",
                 backgroundColor: "#111116",
@@ -294,6 +297,7 @@ app.registerExtension({
             const metaInfo = document.createElement("div");
             Object.assign(metaInfo.style, {
                 flex: "none",
+                minWidth: "0",
                 fontSize: "10px",
                 padding: "0 2px",
                 whiteSpace: "nowrap",
@@ -443,8 +447,9 @@ app.registerExtension({
                     metaInfo.style.color = "#c9a35a";
                     return;
                 }
-                const m = /1girl\s*,\s*([^,]+)\s*,\s*([^,]+)/.exec(text);
-                const head = m ? `${m[1].trim()} / ${m[2].trim()}` : text.slice(0, 40);
+                const sanitized = text.replace(/[\r\n]+/g, " ").trim();
+                const m = /1girl\s*,\s*([^,]+)\s*,\s*([^,]+)/.exec(sanitized);
+                const head = m ? `${m[1].trim()} / ${m[2].trim()}` : sanitized.slice(0, 40);
                 metaInfo.textContent = `元プロンプトを書き出し: ${head}`;
                 metaInfo.style.color = "#8fc79a";
             };
