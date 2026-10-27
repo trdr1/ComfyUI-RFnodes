@@ -39,6 +39,9 @@ app.registerExtension({
                 set(_) { /* 標準プレビューが画像を入れようとしても無視する */ },
                 configurable: true,
             });
+            // 標準の「画像に合わせてノードをリサイズ」を止める
+            this.setSizeForImage = function () {};
+
             const removePreviewWidget = () => {
                 if (!node.widgets) return;
                 const before = node.widgets.length;

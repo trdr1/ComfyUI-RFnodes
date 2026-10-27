@@ -437,6 +437,16 @@ app.registerExtension({
                     const upData = await upResp.json();
                     const uploadedName = upData.subfolder ? `${upData.subfolder}/${upData.name}` : upData.name;
 
+                    const keepSize = [...targetCanvasNode.size];
+                    const keepPos = [...targetCanvasNode.pos];
+                    const restoreLayout = () => {
+                        targetCanvasNode.pos = [...keepPos];
+                        if (targetCanvasNode.size[0] !== keepSize[0] || targetCanvasNode.size[1] !== keepSize[1]) {
+                            targetCanvasNode.setSize([...keepSize]);
+                        }
+                        app.graph.setDirtyCanvas(true, true);
+                    };
+
                     const imgWidget = targetCanvasNode.widgets && targetCanvasNode.widgets.find((w) => w.name === "image");
                     if (imgWidget) {
                         const values = imgWidget.options && imgWidget.options.values;
@@ -452,6 +462,7 @@ app.registerExtension({
 
                     targetCanvasNode.setDirtyCanvas(true, true);
                     app.graph.setDirtyCanvas(true, true);
+                    [0, 150, 600].forEach((ms) => setTimeout(restoreLayout, ms));
                     statusLabel.textContent = `入力へ転送完了: ${uploadedName} (元プロンプト引き継ぎ済)`;
                 } catch (e) {
                     statusLabel.textContent = `転送失敗: ${e.message}`;
