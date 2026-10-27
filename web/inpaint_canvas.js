@@ -532,6 +532,14 @@ app.registerExtension({
                 img.src = api.apiURL(`/view?filename=${encodeURIComponent(filename)}&type=input`);
             };
 
+            // ComfyUI標準のcallback(ノードのリサイズ等)を通さず、キャンバス表示だけ更新する入口
+            this.rfLoadImage = (name) => {
+                if (!imgWidget || !name) return;
+                imgWidget.value = name;
+                removePreviewWidget();
+                loadImage(name);
+            };
+
             if (imgWidget) {
                 const origCb = imgWidget.callback;
                 imgWidget.callback = function (v) {

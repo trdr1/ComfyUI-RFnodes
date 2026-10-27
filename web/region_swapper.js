@@ -135,9 +135,13 @@ app.registerExtension({
             Object.assign(canvas.style, {
                 display: "block",
                 position: "absolute",
-                left: "50%",
-                top: "50%",
-                transform: "translate(-50%, -50%)",
+                top: "0",
+                right: "0",
+                bottom: "0",
+                left: "0",
+                margin: "auto",
+                maxWidth: "100%",
+                maxHeight: "100%",
                 touchAction: "none",
                 userSelect: "none",
                 cursor: "pointer"
@@ -161,14 +165,8 @@ app.registerExtension({
             let regions = [];
             let sessionList = [];
 
-            const fitCanvas = () => {
-                const sw = stage.clientWidth;
-                const sh = stage.clientHeight;
-                if (!sw || !sh || !canvas.width || !canvas.height) return;
-                const scale = Math.min(sw / canvas.width, sh / canvas.height);
-                canvas.style.width = `${Math.floor(canvas.width * scale)}px`;
-                canvas.style.height = `${Math.floor(canvas.height * scale)}px`;
-            };
+            // 表示サイズはCSS(max-width/max-height + margin:auto)で決まる。JSでは触らない
+            const fitCanvas = () => {};
 
             const resizeObserver = new ResizeObserver(() => fitCanvas());
             resizeObserver.observe(stage);
@@ -454,7 +452,11 @@ app.registerExtension({
                             values.push(uploadedName);
                         }
                         imgWidget.value = uploadedName;
-                        if (imgWidget.callback) imgWidget.callback(uploadedName);
+                        if (typeof targetCanvasNode.rfLoadImage === "function") {
+                            targetCanvasNode.rfLoadImage(uploadedName);
+                        } else if (imgWidget.callback) {
+                            imgWidget.callback(uploadedName);
+                        }
                     }
 
                     const maskWidget = targetCanvasNode.widgets && targetCanvasNode.widgets.find((w) => w.name === "mask_data");
