@@ -172,9 +172,7 @@ app.registerExtension({
                 getMinHeight: () => 240
             });
             domWidget.computeSize = function (width) {
-                const targetW = width || (node.size && node.size[0]) || 520;
-                const targetH = Math.max(240, (node.size ? node.size[1] : 580) - 80);
-                return [targetW, targetH];
+                return [width, 240];
             };
 
             const origOnResize = this.onResize;

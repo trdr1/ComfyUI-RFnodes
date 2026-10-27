@@ -154,9 +154,7 @@ app.registerExtension({
                 getMinHeight: () => 360
             });
             domWidget.computeSize = function (width) {
-                const targetW = width || (node.size && node.size[0]) || 540;
-                const targetH = Math.max(360, (node.size ? node.size[1] : 460) - 100);
-                return [targetW, targetH];
+                return [width, 360];
             };
 
             const origOnResize = this.onResize;
