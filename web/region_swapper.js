@@ -155,160 +155,67 @@ app.registerExtension({
                 const data = idata.data;
                 const w = off.width;
                 const h = off.height;
-
-                const bin = new Uint8Array(w * h);
-                for (let i = 0; i < w * h; i++) {
-                    bin[i] = data[i * 4] > 80 ? 1 : 0;
-                }
-
-                const eroded = new Uint8Array(w * h);
-                const rErode = 4;
-                for (let y = rErode; y < h - rErode; y++) {
-                    for (let x = rErode; x < w - rErode; x++) {
-                        const idx = y * w + x;
-                        if (!bin[idx]) continue;
-                        let keep = 1;
-                        for (let dy = -rErode; dy <= rErode; dy += rErode) {
-                            for (let dx = -rErode; dx <= rErode; dx += rErode) {
-                                if (!bin[(y + dy) * w + (x + dx)]) {
-                                    keep = 0;
-                                    break;
-                                }
-                            }
-                            if (!keep) break;
-                        }
-                        eroded[idx] = keep;
-                    }
-                }
-
-                let seedMap = eroded;
-                let seedCount = 0;
-                for (let i = 0; i < w * h; i++) {
-                    if (seedMap[i]) seedCount++;
-                }
-                if (seedCount < 100) {
-                    seedMap = bin;
-                }
-
-                const visitedSeeds = new Uint8Array(w * h);
-                const seedBlobs = [];
-
-                for (let y = 0; y < h; y += 2) {
-                    for (let x = 0; x < w; x += 2) {
-                        const idx = y * w + x;
-                        if (!seedMap[idx] || visitedSeeds[idx]) continue;
-
-                        const q = [idx];
-                        visitedSeeds[idx] = 1;
-                        let sCount = 0;
-                        let sMinX = x, sMaxX = x, sMinY = y, sMaxY = y;
-                        const blobPixels = [];
-
-                        while (q.length > 0) {
-                            const curr = q.pop();
-                            const cy = Math.floor(curr / w);
-                            const cx = curr % w;
-                            sCount++;
-                            blobPixels.push(curr);
-
-                            if (cx < sMinX) sMinX = cx;
-                            if (cx > sMaxX) sMaxX = cx;
-                            if (cy < sMinY) sMinY = cy;
-                            if (cy > sMaxY) sMaxY = cy;
-
-                            const nbrs = [
-                                (cy - 1) * w + cx,
-                                (cy + 1) * w + cx,
-                                cy * w + (cx - 1),
-                                cy * w + (cx + 1)
-                            ];
-                            for (const n of nbrs) {
-                                if (n >= 0 && n < w * h && seedMap[n] && !visitedSeeds[n]) {
-                                    visitedSeeds[n] = 1;
-                                    q.push(n);
-                                }
-                            }
-                        }
-
-                        if (sCount > 50) {
-                            seedBlobs.push({
-                                pixels: blobPixels,
-                                bbox: [sMinX, sMinY, sMaxX, sMaxY]
-                            });
-                        }
-                    }
-                }
-
-                const labelMap = new Int32Array(w * h).fill(-1);
-                const distMap = new Float32Array(w * h).fill(Infinity);
-                const qBfs = [];
-
-                seedBlobs.forEach((b, bIdx) => {
-                    b.pixels.forEach((p) => {
-                        labelMap[p] = bIdx;
-                        distMap[p] = 0;
-                        qBfs.push(p);
-                    });
-                });
-
-                let head = 0;
-                while (head < qBfs.length) {
-                    const curr = qBfs[head++];
-                    const cy = Math.floor(curr / w);
-                    const cx = curr % w;
-                    const cLabel = labelMap[curr];
-                    const cDist = distMap[curr];
-
-                    const nbrs = [
-                        (cy - 1) * w + cx,
-                        (cy + 1) * w + cx,
-                        cy * w + (cx - 1),
-                        cy * w + (cx + 1)
-                    ];
-
-                    for (const n of nbrs) {
-                        if (n >= 0 && n < w * h && bin[n]) {
-                            if (labelMap[n] === -1) {
-                                labelMap[n] = cLabel;
-                                distMap[n] = cDist + 1;
-                                qBfs.push(n);
-                            }
-                        }
-                    }
-                }
+                const visited = new Uint8Array(w * h);
 
                 const foundRegions = [];
-                seedBlobs.forEach((_, bIdx) => {
-                    let rMinX = w, rMaxX = 0, rMinY = h, rMaxY = 0;
-                    let count = 0;
+                const step = 2;
 
-                    for (let y = 0; y < h; y++) {
-                        for (let x = 0; x < w; x++) {
-                            const idx = y * w + x;
-                            if (labelMap[idx] === bIdx) {
+                for (let y = 0; y < h; y += step) {
+                    for (let x = 0; x < w; x += step) {
+                        const idx = y * w + x;
+                        if (visited[idx]) continue;
+                        if (data[idx * 4] > 64) {
+                            let minX = x;
+                            let maxX = x;
+                            let minY = y;
+                            let maxY = y;
+                            let count = 0;
+
+                            const queue = [idx];
+                            visited[idx] = 1;
+
+                            while (queue.length > 0) {
+                                const curr = queue.pop();
+                                const cy = Math.floor(curr / w);
+                                const cx = curr % w;
                                 count++;
-                                if (x < rMinX) rMinX = x;
-                                if (x > rMaxX) rMaxX = x;
-                                if (y < rMinY) rMinY = y;
-                                if (y > rMaxY) rMaxY = y;
+
+                                if (cx < minX) minX = cx;
+                                if (cx > maxX) maxX = cx;
+                                if (cy < minY) minY = cy;
+                                if (cy > maxY) maxY = cy;
+
+                                const neighbors = [
+                                    (cy - 1) * w + cx,
+                                    (cy + 1) * w + cx,
+                                    cy * w + (cx - 1),
+                                    cy * w + (cx + 1)
+                                ];
+
+                                for (const n of neighbors) {
+                                    if (n < 0 || n >= w * h) continue;
+                                    if (!visited[n] && data[n * 4] > 64) {
+                                        visited[n] = 1;
+                                        queue.push(n);
+                                    }
+                                }
+                            }
+
+                            if (count > 80) {
+                                const pad = 12;
+                                foundRegions.push({
+                                    bbox: [
+                                        Math.max(0, minX - pad),
+                                        Math.max(0, minY - pad),
+                                        Math.min(w, maxX + pad),
+                                        Math.min(h, maxY + pad)
+                                    ],
+                                    candidate_idx: 0
+                                });
                             }
                         }
                     }
-
-                    if (count > 80) {
-                        const pad = 4;
-                        const bx1 = Math.max(0, rMinX - pad);
-                        const by1 = Math.max(0, rMinY - pad);
-                        const bx2 = Math.min(w, rMaxX + pad);
-                        const by2 = Math.min(h, rMaxY + pad);
-                        foundRegions.push({
-                            bbox: [bx1, by1, bx2, by2],
-                            center: [(bx1 + bx2) / 2, (by1 + by2) / 2],
-                            candidate_idx: 0
-                        });
-                    }
-                });
-
+                }
                 return foundRegions;
             };
 
@@ -544,20 +451,13 @@ app.registerExtension({
                 const clickX = (clientX - rect.left) * (canvas.width / rect.width);
                 const clickY = (clientY - rect.top) * (canvas.height / rect.height);
 
-                const hits = [];
                 for (const r of regions) {
                     const [x1, y1, x2, y2] = r.bbox;
                     if (clickX >= x1 && clickX <= x2 && clickY >= y1 && clickY <= y2) {
-                        const cx = r.center ? r.center[0] : (x1 + x2) / 2;
-                        const cy = r.center ? r.center[1] : (y1 + y2) / 2;
-                        const distSq = (clickX - cx) ** 2 + (clickY - cy) ** 2;
-                        hits.push({ region: r, distSq });
+                        return r;
                     }
                 }
-
-                if (hits.length === 0) return null;
-                hits.sort((a, b) => a.distSq - b.distSq);
-                return hits[0].region;
+                return null;
             };
 
             canvas.addEventListener("contextmenu", (e) => {
