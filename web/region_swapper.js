@@ -155,6 +155,11 @@ app.registerExtension({
             container.appendChild(statusLabel);
             container.appendChild(stage);
 
+            // ボタン・セレクト等の操作が本体(ノード選択・リサイズ処理)へ漏れないようにする
+            ["pointerdown", "pointerup", "mousedown", "mouseup", "click", "dblclick"].forEach((t) => {
+                container.addEventListener(t, (e) => e.stopPropagation());
+            });
+
             this.addDOMWidget("region_swapper_ui", "customswapper", container, {
                 getValue: () => "",
                 setValue: () => {},
@@ -575,8 +580,66 @@ app.registerExtension({
             };
             api.addEventListener("executed", onApiExecuted);
 
+            // ---- ノードの大きさ・位置が勝手に変わったら戻す安全装置 ----
+            // ユーザー自身がグラフ上でドラッグしている間は何もしない
+            let goodSize = null;
+            let goodPos = null;
+            let userDragging = false;
+            let guardAlive = true;
+            let warned = false;
+
+            const rememberLayout = () => {
+                goodSize = [...node.size];
+                goodPos = [...node.pos];
+            };
+
+            const onWinPointerDown = (e) => {
+                if (app.canvas && e.target === app.canvas.canvas) userDragging = true;
+            };
+            const onWinPointerUp = () => {
+                if (!userDragging) return;
+                userDragging = false;
+                requestAnimationFrame(rememberLayout);
+            };
+            window.addEventListener("pointerdown", onWinPointerDown, true);
+            window.addEventListener("pointerup", onWinPointerUp, true);
+
+            const origConfigure = this.onConfigure;
+            this.onConfigure = function () {
+                if (origConfigure) origConfigure.apply(this, arguments);
+                rememberLayout();
+                requestAnimationFrame(rememberLayout);
+            };
+
+            const guardLoop = () => {
+                if (!guardAlive) return;
+                if (goodSize && goodPos && !userDragging) {
+                    const changed =
+                        Math.abs(node.size[0] - goodSize[0]) > 0.5 ||
+                        Math.abs(node.size[1] - goodSize[1]) > 0.5 ||
+                        Math.abs(node.pos[0] - goodPos[0]) > 0.5 ||
+                        Math.abs(node.pos[1] - goodPos[1]) > 0.5;
+                    if (changed) {
+                        if (!warned) {
+                            warned = true;
+                            console.warn(
+                                "[RFNodes.RegionSwapper] ノードの大きさ/位置が外部要因で変わったため元に戻しました",
+                                { size: [...node.size], pos: [...node.pos], goodSize, goodPos }
+                            );
+                        }
+                        node.pos = [...goodPos];
+                        node.setSize([...goodSize]);
+                        app.graph.setDirtyCanvas(true, true);
+                    }
+                }
+                requestAnimationFrame(guardLoop);
+            };
+
             const origRemoved = this.onRemoved;
             this.onRemoved = function () {
+                guardAlive = false;
+                window.removeEventListener("pointerdown", onWinPointerDown, true);
+                window.removeEventListener("pointerup", onWinPointerUp, true);
                 api.removeEventListener("executed", onApiExecuted);
                 resizeObserver.disconnect();
                 if (origRemoved) origRemoved.apply(this, arguments);
@@ -584,6 +647,8 @@ app.registerExtension({
 
             setTimeout(() => {
                 this.setSize([Math.max(this.size[0], 540), Math.max(this.size[1], 460)]);
+                rememberLayout();
+                guardLoop();
                 fetchSessions();
             }, 60);
         };
