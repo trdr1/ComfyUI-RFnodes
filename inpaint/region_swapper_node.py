@@ -108,9 +108,6 @@ def get_latest_sessions(folder="inpaint_results", limit=25):
         mask_view = {"filename": os.path.basename(m_path), "subfolder": clean_folder, "type": "output"}
         result_views = [{"filename": os.path.basename(rp), "subfolder": clean_folder, "type": "output"} for rp in valid_result_paths]
 
-        raw_boxes = info_meta.get("rf_detected_boxes")
-        detected_boxes = json.loads(raw_boxes) if raw_boxes else []
-
         label = f"{orig_view['filename']} [{os.path.basename(m_path).replace('.png', '')}] ({len(result_views)}枚)"
         sessions.append({
             "mask_path": m_path,
@@ -118,7 +115,6 @@ def get_latest_sessions(folder="inpaint_results", limit=25):
             "orig_view": orig_view,
             "mask_view": mask_view,
             "result_views": result_views,
-            "detected_boxes": detected_boxes,
             "label": label,
         })
     return sessions

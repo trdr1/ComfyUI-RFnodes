@@ -385,21 +385,9 @@ app.registerExtension({
                     canvas.height = origImageEl.naturalHeight;
                     fitCanvas();
 
-                    if (Array.isArray(session.detected_boxes) && session.detected_boxes.length > 0) {
-                        regions = session.detected_boxes.map((b) => {
-                            const [bx1, by1, bx2, by2] = b;
-                            return {
-                                bbox: [bx1, by1, bx2, by2],
-                                center: [(bx1 + bx2) / 2, (by1 + by2) / 2],
-                                candidate_idx: 0
-                            };
-                        });
-                    } else {
-                        regions = extractConnectedComponents(maskImageEl);
-                    }
-
+                    regions = extractConnectedComponents(maskImageEl);
                     render();
-                    statusLabel.textContent = `表示中: ${session.label} (検出枠数: ${regions.length})`;
+                    statusLabel.textContent = `表示中: ${session.label} (検出領域: ${regions.length})`;
                 } catch (err) {
                     statusLabel.textContent = `読込エラー: ${err.message}`;
                     throw err;
