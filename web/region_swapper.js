@@ -75,8 +75,10 @@ app.registerExtension({
             saveBtn.textContent = "💾 確定保存";
             const sendInputBtn = document.createElement("button");
             sendInputBtn.textContent = "🚀 入力に送る";
+            const dlBtn = document.createElement("button");
+            dlBtn.textContent = "📥 見たまま保存";
 
-            [refreshBtn, resetBtn, saveBtn, sendInputBtn].forEach((b) => {
+            [refreshBtn, resetBtn, saveBtn, sendInputBtn, dlBtn].forEach((b) => {
                 Object.assign(b.style, {
                     flex: "1 1 0",
                     height: "26px",
@@ -104,6 +106,7 @@ app.registerExtension({
             row2.appendChild(resetBtn);
             row2.appendChild(saveBtn);
             row2.appendChild(sendInputBtn);
+            row2.appendChild(dlBtn);
 
             topBar.appendChild(row1);
             topBar.appendChild(row2);
@@ -243,7 +246,7 @@ app.registerExtension({
                 return foundRegions;
             };
 
-            const render = () => {
+            const render = (clean = false) => {
                 if (!origImageEl || !canvas.width || !canvas.height) return;
                 const ctx = canvas.getContext("2d");
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -260,6 +263,8 @@ app.registerExtension({
                             ctx.drawImage(cImg, x1, y1, bw, bh, x1, y1, bw, bh);
                         }
                     }
+
+                    if (clean) return;
 
                     ctx.save();
                     ctx.strokeStyle = r.candidate_idx === 0 ? "rgba(255, 180, 0, 0.9)" : "rgba(80, 240, 120, 0.95)";
@@ -503,13 +508,42 @@ app.registerExtension({
                 canvas.addEventListener(t, (e) => e.stopPropagation());
             });
 
+            // 枠・バッジなしの見たままの画像をPNGとして保存する
+            const downloadClean = () => {
+                if (!origImageEl) {
+                    statusLabel.textContent = "保存できる画像がありません";
+                    return;
+                }
+                render(true);
+                canvas.toBlob((blob) => {
+                    render();
+                    if (!blob) {
+                        statusLabel.textContent = "画像の書き出しに失敗しました";
+                        return;
+                    }
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `collage_${Date.now()}.png`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    setTimeout(() => URL.revokeObjectURL(url), 2000);
+                    statusLabel.textContent = `ダウンロードしました: ${a.download}`;
+                }, "image/png");
+            };
+
+            dlBtn.addEventListener("click", downloadClean);
+
             canvas.addEventListener("contextmenu", (e) => {
                 e.preventDefault();
                 e.stopPropagation();
+                if (e.ctrlKey) downloadClean();
             });
 
             canvas.addEventListener("pointerdown", (e) => {
                 if (e.button !== 0 && e.button !== 2) return;
+                if (e.button === 2 && e.ctrlKey) return;
                 const r = findHitRegion(e.clientX, e.clientY);
                 if (!r) return;
 
