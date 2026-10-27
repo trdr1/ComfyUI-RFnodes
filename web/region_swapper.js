@@ -148,11 +148,22 @@ app.registerExtension({
             container.appendChild(statusLabel);
             container.appendChild(stage);
 
-            this.addDOMWidget("region_swapper_ui", "customswapper", container, {
+            const domWidget = this.addDOMWidget("region_swapper_ui", "customswapper", container, {
                 getValue: () => "",
                 setValue: () => {},
                 getMinHeight: () => 360
             });
+            domWidget.computeSize = function (width) {
+                const targetW = width || (node.size && node.size[0]) || 540;
+                const targetH = Math.max(360, (node.size ? node.size[1] : 460) - 100);
+                return [targetW, targetH];
+            };
+
+            const origOnResize = this.onResize;
+            this.onResize = function (size) {
+                if (origOnResize) origOnResize.apply(this, arguments);
+                fitCanvas();
+            };
 
             let currentSession = null;
             let origImageEl = null;

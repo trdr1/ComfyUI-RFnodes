@@ -166,12 +166,22 @@ app.registerExtension({
             container.appendChild(toolbar);
             container.appendChild(stage);
 
-            // 最小高さは固定値。ノードの高さには依存させない（無限伸長の防止）
             const domWidget = this.addDOMWidget("canvas_ui", "customcanvas", container, {
                 getValue: () => (maskWidget ? maskWidget.value : ""),
                 setValue: (v) => {},
                 getMinHeight: () => 240
             });
+            domWidget.computeSize = function (width) {
+                const targetW = width || (node.size && node.size[0]) || 520;
+                const targetH = Math.max(240, (node.size ? node.size[1] : 580) - 80);
+                return [targetW, targetH];
+            };
+
+            const origOnResize = this.onResize;
+            this.onResize = function (size) {
+                if (origOnResize) origOnResize.apply(this, arguments);
+                fitCanvas();
+            };
 
             const maskBuffer = document.createElement("canvas");
             let isDrawing = false;
