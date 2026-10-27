@@ -135,6 +135,9 @@ app.registerExtension({
             Object.assign(canvas.style, {
                 display: "block",
                 flex: "none",
+                margin: "auto",
+                touchAction: "none",
+                userSelect: "none",
                 cursor: "pointer"
             });
 

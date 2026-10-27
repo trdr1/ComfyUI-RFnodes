@@ -150,6 +150,9 @@ app.registerExtension({
             Object.assign(canvas.style, {
                 display: "block",
                 flex: "none",
+                margin: "auto",
+                touchAction: "none",
+                userSelect: "none",
                 backgroundColor: "#111116",
                 borderRadius: "4px",
                 outline: "1px solid #333342",
