@@ -201,7 +201,7 @@ def compose_and_save(mask_path, assignments):
             metadata.add_text(k, str(v))
 
     metadata.add_text("rf_source_image", orig_path)
-    metadata.add_text("rf_composed_from_session", session_path)
+    metadata.add_text("rf_composed_from_session", mask_path)
     metadata.add_text("rf_assignments", json.dumps(assignments, ensure_ascii=False))
 
     save_filename = f"{filename}_{counter:05}_.png"

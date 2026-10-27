@@ -29,20 +29,46 @@ app.registerExtension({
             const topBar = document.createElement("div");
             Object.assign(topBar.style, {
                 display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
+                flexDirection: "column",
                 gap: "6px",
                 flex: "none",
                 fontSize: "11px"
             });
 
-            const leftControls = document.createElement("div");
-            Object.assign(leftControls.style, { display: "flex", gap: "4px", alignItems: "center" });
+            const row1 = document.createElement("div");
+            Object.assign(row1.style, {
+                display: "flex",
+                gap: "6px",
+                alignItems: "center",
+                width: "100%"
+            });
+
+            const sessionSelect = document.createElement("select");
+            Object.assign(sessionSelect.style, {
+                flex: "1 1 auto",
+                minWidth: "0",
+                height: "26px",
+                background: "#181822",
+                border: "1px solid #3c3c4f",
+                color: "#ddd",
+                borderRadius: "3px",
+                fontSize: "11px",
+                padding: "0 6px"
+            });
 
             const refreshBtn = document.createElement("button");
-            refreshBtn.textContent = "🔄 最新読込";
+            refreshBtn.textContent = "🔄 読込";
+
+            const row2 = document.createElement("div");
+            Object.assign(row2.style, {
+                display: "flex",
+                gap: "6px",
+                alignItems: "center",
+                width: "100%"
+            });
+
             const resetBtn = document.createElement("button");
-            resetBtn.textContent = "↩ 元画像にリセット";
+            resetBtn.textContent = "↩ 元画像";
             const saveBtn = document.createElement("button");
             saveBtn.textContent = "💾 確定保存";
             const sendInputBtn = document.createElement("button");
@@ -50,39 +76,35 @@ app.registerExtension({
 
             [refreshBtn, resetBtn, saveBtn, sendInputBtn].forEach((b) => {
                 Object.assign(b.style, {
-                    height: "24px",
-                    padding: "0 8px",
+                    flex: "1 1 0",
+                    height: "26px",
+                    padding: "0 4px",
                     background: "#2a2a38",
                     border: "1px solid #4a4a5e",
                     color: "#eee",
                     borderRadius: "3px",
                     cursor: "pointer",
-                    fontSize: "11px"
+                    fontSize: "11px",
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis"
                 });
             });
+            refreshBtn.style.flex = "0 0 70px";
             saveBtn.style.background = "#24422e";
             saveBtn.style.borderColor = "#437a54";
             sendInputBtn.style.background = "#233348";
             sendInputBtn.style.borderColor = "#3d587a";
 
-            leftControls.appendChild(refreshBtn);
-            leftControls.appendChild(resetBtn);
-            leftControls.appendChild(saveBtn);
-            leftControls.appendChild(sendInputBtn);
+            row1.appendChild(sessionSelect);
+            row1.appendChild(refreshBtn);
 
-            const sessionSelect = document.createElement("select");
-            Object.assign(sessionSelect.style, {
-                height: "24px",
-                background: "#181822",
-                border: "1px solid #3c3c4f",
-                color: "#ddd",
-                borderRadius: "3px",
-                fontSize: "11px",
-                maxWidth: "240px"
-            });
+            row2.appendChild(resetBtn);
+            row2.appendChild(saveBtn);
+            row2.appendChild(sendInputBtn);
 
-            topBar.appendChild(leftControls);
-            topBar.appendChild(sessionSelect);
+            topBar.appendChild(row1);
+            topBar.appendChild(row2);
 
             const statusLabel = document.createElement("div");
             Object.assign(statusLabel.style, {
@@ -90,7 +112,8 @@ app.registerExtension({
                 color: "#8fc79a",
                 overflow: "hidden",
                 whiteSpace: "nowrap",
-                textOverflow: "ellipsis"
+                textOverflow: "ellipsis",
+                padding: "2px 0"
             });
 
             const stage = document.createElement("div");
@@ -185,16 +208,14 @@ app.registerExtension({
                                 if (cy < minY) minY = cy;
                                 if (cy > maxY) maxY = cy;
 
-                                const neighbors = [
-                                    (cy - 1) * w + cx,
-                                    (cy + 1) * w + cx,
-                                    cy * w + (cx - 1),
-                                    cy * w + (cx + 1)
-                                ];
+                                const neighbors = [];
+                                if (cy > 0) neighbors.push((cy - 1) * w + cx);
+                                if (cy < h - 1) neighbors.push((cy + 1) * w + cx);
+                                if (cx > 0) neighbors.push(cy * w + (cx - 1));
+                                if (cx < w - 1) neighbors.push(cy * w + (cx + 1));
 
                                 for (const n of neighbors) {
-                                    if (n < 0 || n >= w * h) continue;
-                                    if (!visited[n] && data[n * 4] > 64) {
+                                    if (!visited[n] && data[n * 4] >= 128) {
                                         visited[n] = 1;
                                         queue.push(n);
                                     }
