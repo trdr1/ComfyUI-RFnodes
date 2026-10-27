@@ -45,6 +45,11 @@ def _resolve_model_path(model_filename: str):
     raise FileNotFoundError(f"YOLO model file not found in models/yolo: {target_path}")
 
 _CACHED_MODELS = {}
+_LAST_DETECTED_BOXES = []
+
+def get_last_detected_boxes():
+    global _LAST_DETECTED_BOXES
+    return list(_LAST_DETECTED_BOXES)
 
 def _get_yolo_model(model_filename: str):
     global _CACHED_MODELS
@@ -90,9 +95,11 @@ class RFHandDetectorNode:
     CATEGORY = "RFNodes/Inpaint"
 
     def detect(self, image, threshold, padding, max_hands, mask_blur, model_name=DEFAULT_MODEL_FILENAME, manual_mask=None):
+        global _LAST_DETECTED_BOXES
         model = _get_yolo_model(model_name)
         masks = []
         previews = []
+        all_detected_boxes = []
 
         batch_count = len(image)
         for i in range(batch_count):
@@ -119,16 +126,22 @@ class RFHandDetectorNode:
             preview_img = pil_img.copy()
             preview_draw = ImageDraw.Draw(preview_img)
 
+            batch_boxes = []
             for conf, (x1, y1, x2, y2), label_name in boxes:
                 bx1 = max(0, int(x1) - padding)
                 by1 = max(0, int(y1) - padding)
                 bx2 = min(w, int(x2) + padding)
                 by2 = min(h, int(y2) + padding)
 
+                batch_boxes.append([bx1, by1, bx2, by2])
                 mask_draw.rectangle([bx1, by1, bx2, by2], fill=255)
                 preview_draw.rectangle([bx1, by1, bx2, by2], outline="lime", width=3)
                 label_text = f"{label_name} {conf:.2f}"
                 preview_draw.text((bx1 + 2, max(0, by1 - 12)), label_text, fill="lime")
+
+            all_detected_boxes.extend(batch_boxes)
+
+        _LAST_DETECTED_BOXES = all_detected_boxes
 
             if mask_blur > 0:
                 mask_img = mask_img.filter(ImageFilter.GaussianBlur(mask_blur))

@@ -116,6 +116,10 @@ class RFSaveImagePreserveMeta:
             orig_save_kwargs["exif"] = orig_exif
         orig_img.save(os.path.join(full_output_folder, orig_file), compress_level=4, **orig_save_kwargs)
 
+        from .hand_detector_node import get_last_detected_boxes
+        detected_boxes = get_last_detected_boxes()
+        boxes_json = json.dumps(detected_boxes, ensure_ascii=False) if detected_boxes else ""
+
         mask_file = ""
         if mask is not None:
             mask_file = f"{filename}_{first_counter:05}_mask.png"
@@ -126,6 +130,8 @@ class RFSaveImagePreserveMeta:
             mask_meta.add_text("rf_source_stem", src_stem)
             mask_meta.add_text("rf_orig_file", orig_file)
             mask_meta.add_text("rf_result_files", json.dumps(result_files, ensure_ascii=False))
+            if boxes_json:
+                mask_meta.add_text("rf_detected_boxes", boxes_json)
             mask_img.save(os.path.join(full_output_folder, mask_file), pnginfo=mask_meta)
 
         # マスクと結果と元画像の対応表(後から解析するスクリプト用)
