@@ -664,8 +664,6 @@ app.registerExtension({
 
             setTimeout(() => {
                 this.setSize([Math.max(this.size[0], 540), Math.max(this.size[1], 460)]);
-                rememberLayout();
-                guardLoop();
                 fetchSessions();
             }, 60);
         };
