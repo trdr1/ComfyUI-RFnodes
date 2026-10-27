@@ -139,9 +139,7 @@ class RFHandDetectorNode:
                 label_text = f"{label_name} {conf:.2f}"
                 preview_draw.text((bx1 + 2, max(0, by1 - 12)), label_text, fill="lime")
 
-            all_detected_boxes.extend(batch_boxes)
-
-        _LAST_DETECTED_BOXES = all_detected_boxes
+                        all_detected_boxes.extend(batch_boxes)
 
             if mask_blur > 0:
                 mask_img = mask_img.filter(ImageFilter.GaussianBlur(mask_blur))
@@ -168,6 +166,7 @@ class RFHandDetectorNode:
             p_arr = np.array(preview_img).astype(np.float32) / 255.0
             previews.append(torch.from_numpy(p_arr))
 
+        _LAST_DETECTED_BOXES = all_detected_boxes
         out_mask = torch.stack(masks, dim=0)
         out_preview = torch.stack(previews, dim=0)
         return (out_mask, out_preview)
