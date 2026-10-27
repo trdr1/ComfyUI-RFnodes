@@ -77,8 +77,11 @@ app.registerExtension({
             sendInputBtn.textContent = "🚀 入力に送る";
             const dlBtn = document.createElement("button");
             dlBtn.textContent = "📥 見たまま保存";
+            const fixBtn = document.createElement("button");
+            fixBtn.textContent = "🛠 修復";
+            fixBtn.title = "ノードの大きさが崩れたとき、標準サイズに戻す";
 
-            [refreshBtn, resetBtn, saveBtn, sendInputBtn, dlBtn].forEach((b) => {
+            [refreshBtn, resetBtn, saveBtn, sendInputBtn, dlBtn, fixBtn].forEach((b) => {
                 Object.assign(b.style, {
                     flex: "1 1 0",
                     height: "26px",
@@ -95,6 +98,7 @@ app.registerExtension({
                 });
             });
             refreshBtn.style.flex = "0 0 70px";
+            fixBtn.style.flex = "0 0 70px";
             saveBtn.style.background = "#24422e";
             saveBtn.style.borderColor = "#437a54";
             sendInputBtn.style.background = "#233348";
@@ -102,6 +106,7 @@ app.registerExtension({
 
             row1.appendChild(sessionSelect);
             row1.appendChild(refreshBtn);
+            row1.appendChild(fixBtn);
 
             row2.appendChild(resetBtn);
             row2.appendChild(saveBtn);
@@ -539,6 +544,18 @@ app.registerExtension({
             };
 
             dlBtn.addEventListener("click", downloadClean);
+
+            fixBtn.addEventListener("click", () => {
+                const W = 540;
+                const H = 460;
+                node.setSize([W + 1, H + 1]);
+                requestAnimationFrame(() => {
+                    node.setSize([W, H]);
+                    app.graph.setDirtyCanvas(true, true);
+                    if (typeof rememberLayout === "function") rememberLayout();
+                    statusLabel.textContent = "レイアウトを標準サイズに戻しました";
+                });
+            });
 
             canvas.addEventListener("contextmenu", (e) => {
                 e.preventDefault();
