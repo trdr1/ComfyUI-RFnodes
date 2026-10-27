@@ -25,7 +25,7 @@ app.registerExtension({
                 padding: "4px",
                 fontFamily: "sans-serif",
                 color: "#eee",
-                overflow: "hidden"
+                overflow: "clip"
             });
 
             const topBar = document.createElement("div");
@@ -124,7 +124,7 @@ app.registerExtension({
                 minHeight: "0",
                 minWidth: "0",
                 width: "100%",
-                overflow: "hidden",
+                overflow: "clip",
                 background: "#111116",
                 borderRadius: "4px",
                 outline: "1px solid #333342",
@@ -485,6 +485,10 @@ app.registerExtension({
                 }
                 return null;
             };
+
+            ["mousedown", "mouseup", "click", "dblclick", "pointerup", "pointermove"].forEach((t) => {
+                canvas.addEventListener(t, (e) => e.stopPropagation());
+            });
 
             canvas.addEventListener("contextmenu", (e) => {
                 e.preventDefault();

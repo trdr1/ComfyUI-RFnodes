@@ -68,7 +68,7 @@ app.registerExtension({
                 gap: "4px",
                 boxSizing: "border-box",
                 padding: "2px",
-                overflow: "hidden"
+                overflow: "clip"
             });
 
             const toolbar = document.createElement("div");
@@ -144,7 +144,7 @@ app.registerExtension({
                 minWidth: "0",
                 width: "100%",
                 position: "relative",
-                overflow: "hidden"
+                overflow: "clip"
             });
 
             const canvas = document.createElement("canvas");
@@ -587,6 +587,10 @@ app.registerExtension({
                 mCtx.moveTo(x, y);
                 render();
             };
+
+            ["mousedown", "mouseup", "click", "dblclick", "pointerup"].forEach((t) => {
+                canvas.addEventListener(t, (e) => e.stopPropagation());
+            });
 
             canvas.addEventListener("pointerdown", (e) => {
                 if (e.button !== 0) return;
