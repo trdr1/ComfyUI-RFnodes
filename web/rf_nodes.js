@@ -536,8 +536,19 @@ app.registerExtension({
 
                     const str = latest != null ? String(latest) : "";
                     const before = previewEl.value;
-                    // 対策3: 値は textarea だけに直接書く(widget.value との二重代入をしない)
                     previewEl.value = str;
+
+                    const popText = message && message.populated_text;
+                    if (popText != null) {
+                        const popStr = Array.isArray(popText) ? String(popText[popText.length - 1] ?? "") : String(popText);
+                        if (textWidget && popStr !== "") {
+                            textWidget.value = popStr;
+                            if (textWidget.inputEl) {
+                                textWidget.inputEl.value = popStr;
+                            }
+                        }
+                    }
+
                     dbg(`#${updateCount} 更新: changed=${before !== str}, length ${before.length} -> ${str.length}`);
                     app.graph.setDirtyCanvas(true, true);
                 };

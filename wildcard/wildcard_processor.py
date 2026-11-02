@@ -153,11 +153,36 @@ def _process_comment_out(text):
             out.append(line)
     return "\n".join(out)
 
-def process_wildcards(text, seed=None, mode="random"):
-    text = _process_comment_out(text)
-    rng = np.random.default_rng(seed)
-    w_dict = _load_wildcard_dict()
+def _parse_mapping_rules(rules_text: str):
+    mapping = []
+    for line in rules_text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        sep = "=>" if "=>" in line else (":" if ":" in line else None)
+        if sep is None:
+            continue
+        parts = line.split(sep, 1)
+        trigger = parts[0].strip()
+        replacement = parts[1].strip()
+        if trigger and replacement:
+            mapping.append((trigger, replacement))
+    return mapping
 
+def resolve_mapped_wildcards(trigger_text: str, mapping_rules: str) -> str:
+    if not trigger_text or not mapping_rules:
+        return ""
+    rules = _parse_mapping_rules(mapping_rules)
+    extracted = []
+    seen = set()
+    for trigger, replacement in rules:
+        if trigger in trigger_text:
+            if replacement not in seen:
+                seen.add(replacement)
+                extracted.append(replacement)
+    return "\n".join(extracted)
+
+def _process_single_block(text, seed, mode, rng, w_dict):
     def replace_options(s):
         found = False
         def rep(match):
@@ -288,6 +313,23 @@ def process_wildcards(text, seed=None, mode="random"):
             break
     return text
 
+def process_wildcards(text, seed=None, mode="random"):
+    cleaned = _process_comment_out(text)
+    rng = np.random.default_rng(seed)
+    w_dict = _load_wildcard_dict()
+
+    raw_blocks = [b.strip() for b in cleaned.split("\n") if b.strip()]
+    if not raw_blocks:
+        return ""
+
+    results = []
+    for block in raw_blocks:
+        res = _process_single_block(block, seed, mode, rng, w_dict)
+        if res.strip():
+            results.append(res.strip())
+
+    return "\n\n".join(results)
+
 def _get_wildcard_keys_list():
     d = _load_wildcard_dict()
     keys = sorted(list(d.keys()))
@@ -309,6 +351,10 @@ class RFWildcardProcessorNode:
                 "replace_single_wildcard": ("BOOLEAN", {"default": True}),
                 "wildcard_mode": (["random", "all_lines_newline", "all_lines_comma"], {"default": "random"}),
                 "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
+            },
+            "optional": {
+                "trigger_text": ("STRING", {"forceInput": True, "default": ""}),
+                "mapping_rules": ("STRING", {"default": "", "multiline": True}),
             }
         }
 
@@ -319,9 +365,15 @@ class RFWildcardProcessorNode:
     CATEGORY = "RFNodes/Wildcard"
 
     @classmethod
-    def IS_CHANGED(cls, text, select_wildcard, replace_single_wildcard, wildcard_mode, seed):
+    def IS_CHANGED(cls, text, select_wildcard, replace_single_wildcard, wildcard_mode, seed, trigger_text="", mapping_rules=""):
         return float("nan")
 
-    def process(self, text, select_wildcard, replace_single_wildcard, wildcard_mode, seed):
-        out = process_wildcards(text, seed=seed, mode=wildcard_mode)
-        return {"ui": {"text": [out]}, "result": (out,)}
+    def process(self, text, select_wildcard, replace_single_wildcard, wildcard_mode, seed, trigger_text="", mapping_rules=""):
+        effective_text = text
+        if trigger_text and mapping_rules:
+            matched_wildcards = resolve_mapped_wildcards(trigger_text, mapping_rules)
+            if matched_wildcards:
+                effective_text = matched_wildcards
+
+        out = process_wildcards(effective_text, seed=seed, mode=wildcard_mode)
+        return {"ui": {"text": [out], "populated_text": [effective_text]}, "result": (out,)}
