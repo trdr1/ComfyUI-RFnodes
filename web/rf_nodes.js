@@ -391,16 +391,6 @@ app.registerExtension({
                         }
                         return origCompute ? origCompute.apply(this, arguments) : [width, 70];
                     };
-                }
-
-                if (mappingWidget) {
-                    mappingWidget.computeSize = (width) => [width, 50];
-                    const curIdx = this.widgets.indexOf(mappingWidget);
-                    if (curIdx !== -1) {
-                        this.widgets.splice(curIdx, 1);
-                        this.widgets.push(mappingWidget);
-                    }
-                }
 
                     const syncTextVal = () => {
                         if (textWidget.inputEl) {
@@ -416,11 +406,12 @@ app.registerExtension({
                     const origSerialize = textWidget.serializeValue;
                     textWidget.serializeValue = function () {
                         syncTextVal();
-                        const v = origSerialize ? origSerialize.apply(this, arguments) : this.value;
-                        // 実行時にバックエンドへ送られる text の値を確認できる
-                        Promise.resolve(v).then((val) => dbg("serialize text ->", JSON.stringify(val)));
-                        return v;
+                        return origSerialize ? origSerialize.apply(this, arguments) : this.value;
                     };
+                }
+
+                if (mappingWidget) {
+                    mappingWidget.computeSize = (width) => [width, 50];
                 }
 
                 if (selectWidget) {
@@ -491,15 +482,6 @@ app.registerExtension({
                     serialize: false,
                 });
 
-                if (mappingWidget) {
-                    const mIdx = this.widgets.indexOf(mappingWidget);
-                    const pIdx = this.widgets.indexOf(previewWidget);
-                    if (mIdx !== -1 && pIdx !== -1 && mIdx > pIdx) {
-                        this.widgets.splice(mIdx, 1);
-                        this.widgets.splice(pIdx, 0, mappingWidget);
-                    }
-                }
-
                 const PREVIEW_MIN_HEIGHT = 110;
                 previewWidget.computeSize = (width) => [width, PREVIEW_MIN_HEIGHT];
 
@@ -567,7 +549,7 @@ app.registerExtension({
                     const popText = message && message.populated_text;
                     if (popText != null) {
                         const popStr = Array.isArray(popText) ? String(popText[popText.length - 1] ?? "") : String(popText);
-                        if (textWidget && popStr !== "") {
+                        if (textWidget) {
                             textWidget.value = popStr;
                             if (textWidget.inputEl) {
                                 textWidget.inputEl.value = popStr;

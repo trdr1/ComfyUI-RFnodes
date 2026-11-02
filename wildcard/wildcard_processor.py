@@ -351,10 +351,10 @@ class RFWildcardProcessorNode:
                 "replace_single_wildcard": ("BOOLEAN", {"default": True}),
                 "wildcard_mode": (["random", "all_lines_newline", "all_lines_comma"], {"default": "random"}),
                 "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff}),
+                "mapping_rules": ("STRING", {"default": "", "multiline": True}),
             },
             "optional": {
                 "trigger_text": ("STRING", {"forceInput": True, "default": ""}),
-                "mapping_rules": ("STRING", {"default": "", "multiline": True}),
             }
         }
 
@@ -365,15 +365,14 @@ class RFWildcardProcessorNode:
     CATEGORY = "RFNodes/Wildcard"
 
     @classmethod
-    def IS_CHANGED(cls, text, select_wildcard, replace_single_wildcard, wildcard_mode, seed, trigger_text="", mapping_rules=""):
+    def IS_CHANGED(cls, text, select_wildcard, replace_single_wildcard, wildcard_mode, seed, mapping_rules="", trigger_text=""):
         return float("nan")
 
-    def process(self, text, select_wildcard, replace_single_wildcard, wildcard_mode, seed, trigger_text="", mapping_rules=""):
-        effective_text = text
-        if trigger_text and mapping_rules:
-            matched_wildcards = resolve_mapped_wildcards(trigger_text, mapping_rules)
-            if matched_wildcards:
-                effective_text = matched_wildcards
+    def process(self, text, select_wildcard, replace_single_wildcard, wildcard_mode, seed, mapping_rules="", trigger_text=""):
+        if trigger_text is not None and len(str(trigger_text).strip()) > 0:
+            effective_text = resolve_mapped_wildcards(str(trigger_text), mapping_rules)
+        else:
+            effective_text = text
 
         out = process_wildcards(effective_text, seed=seed, mode=wildcard_mode)
         return {"ui": {"text": [out], "populated_text": [effective_text]}, "result": (out,)}
