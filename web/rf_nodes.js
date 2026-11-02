@@ -378,6 +378,7 @@ app.registerExtension({
                 const textWidget = this.widgets.find((w) => w.name === "text");
                 const selectWidget = this.widgets.find((w) => w.name === "select_wildcard");
                 const replaceWidget = this.widgets.find((w) => w.name === "replace_single_wildcard");
+                const mappingWidget = this.widgets.find((w) => w.name === "mapping_rules");
 
                 dbg("onNodeCreated: node id =", node.id);
 
@@ -388,8 +389,18 @@ app.registerExtension({
                         if (isConverted) {
                             return [width, -4];
                         }
-                        return origCompute ? origCompute.apply(this, arguments) : [width, 60];
+                        return origCompute ? origCompute.apply(this, arguments) : [width, 70];
                     };
+                }
+
+                if (mappingWidget) {
+                    mappingWidget.computeSize = (width) => [width, 50];
+                    const curIdx = this.widgets.indexOf(mappingWidget);
+                    if (curIdx !== -1) {
+                        this.widgets.splice(curIdx, 1);
+                        this.widgets.push(mappingWidget);
+                    }
+                }
 
                     const syncTextVal = () => {
                         if (textWidget.inputEl) {
@@ -480,28 +491,42 @@ app.registerExtension({
                     serialize: false,
                 });
 
-                previewWidget.computeSize = (width) => [width, 110];
+                if (mappingWidget) {
+                    const mIdx = this.widgets.indexOf(mappingWidget);
+                    const pIdx = this.widgets.indexOf(previewWidget);
+                    if (mIdx !== -1 && pIdx !== -1 && mIdx > pIdx) {
+                        this.widgets.splice(mIdx, 1);
+                        this.widgets.splice(pIdx, 0, mappingWidget);
+                    }
+                }
 
-                const adjustLayout = () => {
+                const PREVIEW_MIN_HEIGHT = 110;
+                previewWidget.computeSize = (width) => [width, PREVIEW_MIN_HEIGHT];
+
+                const calcOtherWidgetsHeight = () => {
                     const isConverted = textWidget && (textWidget.type === "converted-widget" || (node.inputs && node.inputs.some((i) => i.name === "text" && i.link != null)));
                     if (isConverted && textWidget.inputEl) {
                         textWidget.inputEl.style.display = "none";
                         textWidget.inputEl.style.height = "0px";
                     }
 
-                    let fixedHeight = 36;
+                    let h = 36;
                     for (const w of node.widgets) {
                         if (w === previewWidget) continue;
                         if (w === textWidget && isConverted) continue;
                         if (w.computeSize) {
                             const sz = w.computeSize(node.size[0]);
-                            fixedHeight += (sz && sz[1] > 0) ? sz[1] + 4 : 24;
+                            h += (sz && sz[1] > 0) ? sz[1] + 4 : 24;
                         } else {
-                            fixedHeight += 24;
+                            h += 24;
                         }
                     }
+                    return h;
+                };
 
-                    const avail = Math.max(60, node.size[1] - fixedHeight - 16);
+                const adjustLayout = () => {
+                    const otherH = calcOtherWidgetsHeight();
+                    const avail = Math.max(PREVIEW_MIN_HEIGHT, node.size[1] - otherH - 12);
                     previewEl.style.height = `${avail}px`;
                 };
 
@@ -578,8 +603,11 @@ app.registerExtension({
                 };
 
                 setTimeout(() => {
+                    const ideal = this.computeSize();
+                    const targetW = Math.max(this.size[0], ideal[0], 360);
+                    const targetH = Math.max(this.size[1], ideal[1]);
+                    this.setSize([targetW, targetH]);
                     adjustLayout();
-                    this.setSize([this.size[0], Math.max(this.size[1], 180)]);
                 }, 40);
             };
         }
