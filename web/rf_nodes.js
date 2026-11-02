@@ -485,6 +485,77 @@ app.registerExtension({
                 const PREVIEW_MIN_HEIGHT = 110;
                 previewWidget.computeSize = (width) => [width, PREVIEW_MIN_HEIGHT];
 
+                const parseRules = (rulesStr) => {
+                    if (!rulesStr) return [];
+                    const lines = rulesStr.split("\n");
+                    const mapping = [];
+                    for (const line of lines) {
+                        const trimmed = line.trim();
+                        if (!trimmed || trimmed.startsWith("#")) continue;
+                        const sep = trimmed.includes("=>") ? "=>" : (trimmed.includes(":") ? ":" : null);
+                        if (!sep) continue;
+                        const parts = trimmed.split(sep);
+                        const trigger = parts[0].trim();
+                        const replacement = parts.slice(1).join(sep).trim();
+                        if (trigger && replacement) {
+                            mapping.push({ trigger, replacement });
+                        }
+                    }
+                    return mapping;
+                };
+
+                const resolveMatches = (triggerText, rulesStr) => {
+                    if (!triggerText || !rulesStr) return "";
+                    const rules = parseRules(rulesStr);
+                    const results = [];
+                    const seen = new Set();
+                    for (const { trigger, replacement } of rules) {
+                        if (triggerText.includes(trigger)) {
+                            if (!seen.has(replacement)) {
+                                seen.add(replacement);
+                                results.push(replacement);
+                            }
+                        }
+                    }
+                    return results.join("\n");
+                };
+
+                const getSourceText = () => {
+                    if (!node.inputs) return null;
+                    const input = node.inputs.find((i) => i.name === "trigger_text");
+                    if (!input || input.link == null || !app.graph || !app.graph.links) return null;
+                    const link = app.graph.links[input.link];
+                    if (!link) return null;
+                    const srcNode = app.graph.getNodeById(link.origin_id);
+                    if (!srcNode || !srcNode.widgets) return null;
+                    const targetW = srcNode.widgets.find((w) => w.name === "prompt_text" || w.name === "text" || w.name === "string" || w.name === "value") || srcNode.widgets[0];
+                    return targetW && targetW.value != null ? String(targetW.value) : "";
+                };
+
+                let lastTriggerText = null;
+
+                const checkRealtimeTrigger = () => {
+                    const srcText = getSourceText();
+                    if (srcText === null) {
+                        lastTriggerText = null;
+                        return;
+                    }
+                    if (srcText !== lastTriggerText) {
+                        lastTriggerText = srcText;
+                        const rulesStr = mappingWidget ? (mappingWidget.value || "") : "";
+                        const matched = resolveMatches(srcText, rulesStr);
+                        if (textWidget) {
+                            textWidget.value = matched;
+                            if (textWidget.inputEl) {
+                                textWidget.inputEl.value = matched;
+                            }
+                            app.graph.setDirtyCanvas(true, true);
+                        }
+                    }
+                };
+
+                const realtimeTimer = setInterval(checkRealtimeTrigger, 200);
+
                 const calcOtherWidgetsHeight = () => {
                     const isConverted = textWidget && (textWidget.type === "converted-widget" || (node.inputs && node.inputs.some((i) => i.name === "text" && i.link != null)));
                     if (isConverted && textWidget.inputEl) {
@@ -580,6 +651,7 @@ app.registerExtension({
 
                 const origOnRemoved = this.onRemoved;
                 this.onRemoved = function () {
+                    clearInterval(realtimeTimer);
                     api.removeEventListener("executed", onApiExecuted);
                     if (origOnRemoved) origOnRemoved.apply(this, arguments);
                 };
