@@ -480,6 +480,8 @@ app.registerExtension({
                     serialize: false,
                 });
 
+                previewWidget.computeSize = (width) => [width, 110];
+
                 const adjustLayout = () => {
                     const isConverted = textWidget && (textWidget.type === "converted-widget" || (node.inputs && node.inputs.some((i) => i.name === "text" && i.link != null)));
                     if (isConverted && textWidget.inputEl) {
@@ -487,7 +489,7 @@ app.registerExtension({
                         textWidget.inputEl.style.height = "0px";
                     }
 
-                    let fixedHeight = 32;
+                    let fixedHeight = 36;
                     for (const w of node.widgets) {
                         if (w === previewWidget) continue;
                         if (w === textWidget && isConverted) continue;
@@ -499,9 +501,8 @@ app.registerExtension({
                         }
                     }
 
-                    const avail = Math.max(50, node.size[1] - fixedHeight - 16);
+                    const avail = Math.max(60, node.size[1] - fixedHeight - 16);
                     previewEl.style.height = `${avail}px`;
-                    previewWidget.computeSize = (width) => [width, avail + 8];
                 };
 
                 const origOnResize = this.onResize;
